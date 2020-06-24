@@ -21,6 +21,11 @@ pub struct AsmBuffer {
 }
 
 impl AsmBuffer {
+    pub fn new() -> Self {
+        Self {
+            storage: Vec::with_capacity(128),
+        }
+    }
     pub fn index(&self) -> usize {
         self.storage.len()
     }
