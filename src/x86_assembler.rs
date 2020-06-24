@@ -1980,7 +1980,19 @@ impl X86Asm {
             .two_byte_op_off(OP2_SQRTSD_VsdWsd, dst as _, base, offset);
     }
 
-    pub fn roundss_rr(&mut self, src: XMMRegisterID, dst: XMMRegisterID, rounding: Rounding) {}
+    pub fn roundss_rr(&mut self, src: XMMRegisterID, dst: XMMRegisterID, rounding: Rounding) {
+        self.formatter.prefix(PRE_SSE_66);
+        self.formatter.three_byte_op_rm(OP2_3BYTE_ESCAPE_3A,OP3_ROUNDSS_VssWssIb,dst as _,src.into());
+        self.formatter.buffer.put_byte(rounding as i8);
+    }
+
+    pub fn roundsd_rr(&mut self,src: XMMRegisterID,dst: XMMRegisterID,rounding: Rounding) {
+        self.formatter.prefix(PRE_SSE_66);
+        self.formatter.three_byte_op_rm(OP2_3BYTE_ESCAPE_3A, OP3_ROUNDSD_VssWssIb,dst as _,src.into());
+        self.formatter.buffer.put_byte(rounding as i8);
+    }
+
+
     pub fn set_int32(where_: *mut u8, value: i32) {
         crate::utils::unaligned_store((where_ as usize - 4) as *mut u8, value);
     }
@@ -2301,7 +2313,12 @@ pub mod TwoByteOpcodeID {
         OP2_BSWAP = 0xC8,
         OP2_PSLLQ_UdqIb = 0x73,
         OP2_PSRLQ_UdqIb = 0x73,
-        OP2_POR_VdqWdq = 0xEB
+        OP2_POR_VdqWdq = 0xEB,
+        OP3_ROUNDSS_VssWssIb = 0x0A,
+        OP3_ROUNDSD_VssWssIb = 0x0B,
+        OP3_LFENCE = 0xe8,
+        OP3_MFENCE = 0xf0,
+        OP3_SFENCE = 0xf8
     );
 }
 use OneByteOpcodeId::*;
@@ -2809,5 +2826,27 @@ impl X86AsmFormatter {
             self.put_modrm_sib(ModRmMode::NoDisp, reg, Self::NO_BASE, Self::NO_IX, 0);
         }
         self.buffer.put_int(addr as _);
+    }
+
+    pub fn three_byte_op(&mut self,prefix: u8,opcode: u8) {
+        self.buffer.put_byte(OP_2BYTE_ESCAPE as _);
+        self.buffer.put_byte(prefix as _);
+        self.buffer.put_byte(opcode as _);
+    }
+
+    pub fn three_byte_op_rm(&mut self,prefix: u8,op: u8,reg: i32,rm: RegisterID) {
+        self.emit_rex_if_needed(reg as _,0,rm as _);
+        self.buffer.put_byte(OP_2BYTE_ESCAPE as _);
+        self.buffer.put_byte(prefix as _);
+        self.buffer.put_byte(op as _);
+        self.register_modrm(reg,rm);
+    }
+
+    pub fn three_byte_op_disp(&mut self,prefix: u8,op: u8,reg: i32,base: RegisterID,disp: i32) {
+        self.emit_rex_if_needed(reg,0,base as _);
+        self.buffer.put_byte(OP_2BYTE_ESCAPE as _);
+        self.buffer.put_byte(prefix as _);
+        self.buffer.put_byte(op as _);
+        self.memory_modrm(reg,base,disp);
     }
 }
