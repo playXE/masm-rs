@@ -1,3 +1,12 @@
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
+#[repr(u8)]
+pub enum Rounding {
+    ToNearestWithTiesToEven = 0,
+    TowardNegativeInfiniti = 1,
+    TowardInfiniti = 2,
+    TowardZero = 3,
+}
+
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
 #[repr(u8)]
 pub enum RegisterID {
@@ -39,6 +48,12 @@ pub enum XMMRegisterID {
     XMM13,
     XMM14,
     XMM15,
+}
+
+impl Into<RegisterID> for XMMRegisterID {
+    fn into(self) -> RegisterID {
+        unsafe { std::mem::transmute(self) }
+    }
 }
 
 pub struct X86Asm {
@@ -1514,6 +1529,458 @@ impl X86Asm {
     pub fn cpuid(&mut self) {
         self.formatter.two_byte_op(OP2_CPUID);
     }
+
+    pub fn addsd_rr(&mut self, src: XMMRegisterID, dst: XMMRegisterID) {
+        self.formatter.prefix(PRE_SSE_F2);
+        self.formatter
+            .two_byte_op_rm(OP2_ADDSD_VsdWsd, dst as i32, src.into());
+    }
+
+    pub fn addsd_mr(&mut self, offset: i32, base: RegisterID, dst: XMMRegisterID) {
+        self.formatter.prefix(PRE_SSE_F2);
+        self.formatter
+            .two_byte_op_off(OP2_ADDSD_VsdWsd, dst as i32, base, offset);
+    }
+
+    pub fn addsd_mr_scaled(
+        &mut self,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+        dst: XMMRegisterID,
+    ) {
+        self.formatter.prefix(PRE_SSE_F2);
+        self.formatter
+            .two_byte_op_scaled(OP2_ADDSD_VsdWsd, dst as i32, base, index, scale, offset);
+    }
+
+    pub fn addss_rr(&mut self, src: XMMRegisterID, dst: XMMRegisterID) {
+        self.formatter.prefix(PRE_SSE_F3);
+        self.formatter
+            .two_byte_op_rm(OP2_ADDSD_VsdWsd, dst as i32, src.into());
+    }
+
+    pub fn addss_mr(&mut self, offset: i32, base: RegisterID, dst: XMMRegisterID) {
+        self.formatter.prefix(PRE_SSE_F3);
+        self.formatter
+            .two_byte_op_off(OP2_ADDSD_VsdWsd, dst as i32, base, offset);
+    }
+
+    pub fn addss_mr_scaled(
+        &mut self,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+        dst: XMMRegisterID,
+    ) {
+        self.formatter.prefix(PRE_SSE_F3);
+        self.formatter
+            .two_byte_op_scaled(OP2_ADDSD_VsdWsd, dst as i32, base, index, scale, offset);
+    }
+    pub fn cvtsi2sd_rr(&mut self, src: RegisterID, dst: XMMRegisterID) {
+        self.formatter.prefix(PRE_SSE_F2);
+        self.formatter
+            .two_byte_op_rm(OP2_CVTSI2SD_VsdEd, dst as _, src);
+    }
+
+    pub fn cvtsi2ss_rr(&mut self, src: RegisterID, dst: XMMRegisterID) {
+        self.formatter.prefix(PRE_SSE_F2);
+        self.formatter
+            .two_byte_op_rm(OP2_CVTSI2SD_VsdEd, dst as _, src);
+    }
+
+    pub fn cvtsi2sdq_rr(&mut self, src: RegisterID, dst: XMMRegisterID) {
+        self.formatter.prefix(PRE_SSE_F3);
+        self.formatter
+            .two_byte_op64_rm(OP2_CVTSI2SD_VsdEd, dst as _, src);
+    }
+    pub fn cvtsi2ssq_rr(&mut self, src: RegisterID, dst: XMMRegisterID) {
+        self.formatter.prefix(PRE_SSE_F3);
+        self.formatter
+            .two_byte_op64_rm(OP2_CVTSI2SD_VsdEd, dst as _, src);
+    }
+
+    pub fn cvtsi2sdq_mr(&mut self, offset: i32, base: RegisterID, dst: XMMRegisterID) {
+        self.formatter.prefix(PRE_SSE_F3);
+        self.formatter
+            .two_byte_op64_off(OP2_CVTSI2SD_VsdEd, dst as _, base, offset);
+    }
+    pub fn cvtsi2sd_mr(&mut self, offset: i32, base: RegisterID, dst: XMMRegisterID) {
+        self.formatter.prefix(PRE_SSE_F2);
+        self.formatter
+            .two_byte_op_off(OP2_CVTSI2SD_VsdEd, dst as _, base, offset);
+    }
+    pub fn cvtsi2ss_mr(&mut self, offset: i32, base: RegisterID, dst: XMMRegisterID) {
+        self.formatter.prefix(PRE_SSE_F3);
+        self.formatter
+            .two_byte_op_off(OP2_CVTSI2SD_VsdEd, dst as _, base, offset);
+    }
+
+    pub fn cvttsd2si_rr(&mut self, src: XMMRegisterID, dst: RegisterID) {
+        self.formatter.prefix(PRE_SSE_F2);
+        self.formatter
+            .two_byte_op_rm(OP2_CVTTSD2SI_GdWsd, dst as _, src.into());
+    }
+    pub fn cvttss2si_rr(&mut self, src: XMMRegisterID, dst: RegisterID) {
+        self.formatter.prefix(PRE_SSE_F3);
+        self.formatter
+            .two_byte_op_rm(OP2_CVTTSS2SI_GdWsd, dst as _, src.into());
+    }
+    pub fn cvttss2siq_rr(&mut self, src: XMMRegisterID, dst: RegisterID) {
+        self.formatter.prefix(PRE_SSE_F3);
+        self.formatter
+            .two_byte_op64_rm(OP2_CVTTSS2SI_GdWsd, dst as _, src.into());
+    }
+
+    pub fn cvtsd2ss_rr(&mut self, src: XMMRegisterID, dst: XMMRegisterID) {
+        self.formatter.prefix(PRE_SSE_F2);
+        self.formatter
+            .two_byte_op_rm(OP2_CVTSD2SS_VsdWsd, dst as _, src.into());
+    }
+
+    pub fn cvtsd2ss_mr(&mut self, offset: i32, base: RegisterID, dst: XMMRegisterID) {
+        self.formatter.prefix(PRE_SSE_F2);
+        self.formatter
+            .two_byte_op_off(OP2_CVTSD2SS_VsdWsd, dst as _, base, offset);
+    }
+    pub fn cvtss2sd_rr(&mut self, src: XMMRegisterID, dst: XMMRegisterID) {
+        self.formatter.prefix(PRE_SSE_F3);
+        self.formatter
+            .two_byte_op_rm(OP2_CVTSS2SD_VsdWsd, dst as _, src.into());
+    }
+
+    pub fn cvtss2sd_mr(&mut self, offset: i32, base: RegisterID, dst: XMMRegisterID) {
+        self.formatter.prefix(PRE_SSE_F2);
+        self.formatter
+            .two_byte_op_off(OP2_CVTSS2SD_VsdWsd, dst as _, base, offset);
+    }
+
+    pub fn cvttsd2siq_rr(&mut self, src: XMMRegisterID, dst: RegisterID) {
+        self.formatter.prefix(PRE_SSE_F2);
+        self.formatter
+            .two_byte_op64_rm(OP2_CVTTSD2SI_GdWsd, dst as _, src.into());
+    }
+
+    pub fn movd_f2i_rr(&mut self, src: XMMRegisterID, dst: RegisterID) {
+        self.formatter.prefix(PRE_SSE_66);
+        self.formatter.two_byte_op_rm(OP2_MOVD_EdVd, src as _, dst);
+    }
+
+    pub fn movd_i2f_rr(&mut self, src: RegisterID, dst: XMMRegisterID) {
+        self.formatter.prefix(PRE_SSE_66);
+        self.formatter.two_byte_op_rm(OP2_MOVD_VdEd, dst as _, src);
+    }
+
+    pub fn movmskpd_rr(&mut self, src: XMMRegisterID, dst: RegisterID) {
+        self.formatter.prefix(PRE_SSE_66);
+        self.formatter
+            .two_byte_op64_rm(OP2_MOVMSKPD_VdEd, dst as _, src.into());
+    }
+
+    pub fn movq_f2i_rr(&mut self, src: XMMRegisterID, dst: RegisterID) {
+        self.formatter.prefix(PRE_SSE_66);
+        self.formatter
+            .two_byte_op64_rm(OP2_MOVD_EdVd, src as _, dst);
+    }
+
+    pub fn movq_i2f_rr(&mut self, src: RegisterID, dst: XMMRegisterID) {
+        self.formatter.prefix(PRE_SSE_66);
+        self.formatter
+            .two_byte_op64_rm(OP2_MOVD_VdEd, dst as _, src);
+    }
+
+    pub fn movapd_rr(&mut self, src: XMMRegisterID, dst: XMMRegisterID) {
+        self.formatter.prefix(PRE_SSE_66);
+        self.formatter
+            .two_byte_op_rm(OP2_MOVAPD_VpdWpd, dst as _, src.into());
+    }
+
+    pub fn movaps_rr(&mut self, src: XMMRegisterID, dst: XMMRegisterID) {
+        self.formatter
+            .two_byte_op_rm(OP2_MOVAPS_VpdWpd, dst as _, src.into());
+    }
+
+    pub fn movsd_rr(&mut self, src: XMMRegisterID, dst: XMMRegisterID) {
+        self.formatter.prefix(PRE_SSE_F2);
+        self.formatter
+            .two_byte_op_rm(OP2_MOVSD_VsdWsd, dst as _, src.into());
+    }
+
+    pub fn movsd_rm(&mut self, src: XMMRegisterID, offset: i32, base: RegisterID) {
+        self.formatter.prefix(PRE_SSE_F2);
+        self.formatter
+            .two_byte_op_off(OP2_MOVSD_WsdVsd, src as _, base, offset);
+    }
+
+    pub fn movsd_rm_scaled(
+        &mut self,
+        src: XMMRegisterID,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+    ) {
+        self.formatter.prefix(PRE_SSE_F2);
+        self.formatter
+            .two_byte_op_scaled(OP2_MOVSD_WsdVsd, src as _, base, index, scale, offset);
+    }
+    pub fn movss_rr(&mut self, src: XMMRegisterID, dst: XMMRegisterID) {
+        self.formatter.prefix(PRE_SSE_F3);
+        self.formatter
+            .two_byte_op_rm(OP2_MOVSD_VsdWsd, dst as _, src.into());
+    }
+
+    pub fn movss_rm(&mut self, src: XMMRegisterID, offset: i32, base: RegisterID) {
+        self.formatter.prefix(PRE_SSE_F3);
+        self.formatter
+            .two_byte_op_off(OP2_MOVSD_WsdVsd, src as _, base, offset);
+    }
+
+    pub fn movss_rm_scaled(
+        &mut self,
+        src: XMMRegisterID,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+    ) {
+        self.formatter.prefix(PRE_SSE_F3);
+        self.formatter
+            .two_byte_op_scaled(OP2_MOVSD_WsdVsd, src as _, base, index, scale, offset);
+    }
+    pub fn movsd_mr(&mut self, src: XMMRegisterID, offset: i32, base: RegisterID) {
+        self.formatter.prefix(PRE_SSE_F2);
+        self.formatter
+            .two_byte_op_off(OP2_MOVSD_VsdWsd, src as _, base, offset);
+    }
+
+    pub fn movsd_mr_scaled(
+        &mut self,
+        src: XMMRegisterID,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+    ) {
+        self.formatter.prefix(PRE_SSE_F2);
+        self.formatter
+            .two_byte_op_scaled(OP2_MOVSD_VsdWsd, src as _, base, index, scale, offset);
+    }
+    pub fn movss_mr(&mut self, src: XMMRegisterID, offset: i32, base: RegisterID) {
+        self.formatter.prefix(PRE_SSE_F3);
+        self.formatter
+            .two_byte_op_off(OP2_MOVSD_VsdWsd, src as _, base, offset);
+    }
+
+    pub fn movss_mr_scaled(
+        &mut self,
+        src: XMMRegisterID,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+    ) {
+        self.formatter.prefix(PRE_SSE_F3);
+        self.formatter
+            .two_byte_op_scaled(OP2_MOVSD_VsdWsd, src as _, base, index, scale, offset);
+    }
+
+    pub fn mulsd_rr(&mut self, src: XMMRegisterID, dst: XMMRegisterID) {
+        self.formatter.prefix(PRE_SSE_F2);
+        self.formatter
+            .two_byte_op_rm(OP2_MULSD_VsdWsd, dst as _, src.into());
+    }
+
+    pub fn mulsd_mr(&mut self, offset: i32, base: RegisterID, dst: XMMRegisterID) {
+        self.formatter.prefix(PRE_SSE_F2);
+        self.formatter
+            .two_byte_op_off(OP2_MULSD_VsdWsd, dst as _, base, offset);
+    }
+    pub fn mulsd_mr_scaled(
+        &mut self,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+        dst: XMMRegisterID,
+    ) {
+        self.formatter.prefix(PRE_SSE_F2);
+        self.formatter
+            .two_byte_op_scaled(OP2_MULSD_VsdWsd, dst as _, base, index, scale, offset);
+    }
+    pub fn mulss_rr(&mut self, src: XMMRegisterID, dst: XMMRegisterID) {
+        self.formatter.prefix(PRE_SSE_F3);
+        self.formatter
+            .two_byte_op_rm(OP2_MULSD_VsdWsd, dst as _, src.into());
+    }
+
+    pub fn mulss_mr(&mut self, offset: i32, base: RegisterID, dst: XMMRegisterID) {
+        self.formatter.prefix(PRE_SSE_F3);
+        self.formatter
+            .two_byte_op_off(OP2_MULSD_VsdWsd, dst as _, base, offset);
+    }
+    pub fn mulss_mr_scaled(
+        &mut self,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+        dst: XMMRegisterID,
+    ) {
+        self.formatter.prefix(PRE_SSE_F3);
+        self.formatter
+            .two_byte_op_scaled(OP2_MULSD_VsdWsd, dst as _, base, index, scale, offset);
+    }
+
+    pub fn subsd_rr(&mut self, src: XMMRegisterID, dst: XMMRegisterID) {
+        self.formatter.prefix(PRE_SSE_F2);
+        self.formatter
+            .two_byte_op_rm(OP2_SUBSD_VsdWsd, dst as _, src.into());
+    }
+
+    pub fn subsd_mr(&mut self, offset: i32, base: RegisterID, dst: XMMRegisterID) {
+        self.formatter.prefix(PRE_SSE_F2);
+        self.formatter
+            .two_byte_op_off(OP2_SUBSD_VsdWsd, dst as _, base, offset);
+    }
+    pub fn subsd_mr_scaled(
+        &mut self,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+        dst: XMMRegisterID,
+    ) {
+        self.formatter.prefix(PRE_SSE_F2);
+        self.formatter
+            .two_byte_op_scaled(OP2_SUBSD_VsdWsd, dst as _, base, index, scale, offset);
+    }
+    pub fn subss_rr(&mut self, src: XMMRegisterID, dst: XMMRegisterID) {
+        self.formatter.prefix(PRE_SSE_F3);
+        self.formatter
+            .two_byte_op_rm(OP2_SUBSD_VsdWsd, dst as _, src.into());
+    }
+
+    pub fn subss_mr(&mut self, offset: i32, base: RegisterID, dst: XMMRegisterID) {
+        self.formatter.prefix(PRE_SSE_F3);
+        self.formatter
+            .two_byte_op_off(OP2_SUBSD_VsdWsd, dst as _, base, offset);
+    }
+    pub fn subss_mr_scaled(
+        &mut self,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+        dst: XMMRegisterID,
+    ) {
+        self.formatter.prefix(PRE_SSE_F3);
+        self.formatter
+            .two_byte_op_scaled(OP2_SUBSD_VsdWsd, dst as _, base, index, scale, offset);
+    }
+
+    pub fn ucomisd_rr(&mut self, src: XMMRegisterID, dst: XMMRegisterID) {
+        self.formatter.prefix(PRE_SSE_66);
+        self.formatter
+            .two_byte_op_rm(OP2_UCOMISD_VsdWsd, dst as _, src.into());
+    }
+
+    pub fn ucomisd_mr(&mut self, offset: i32, base: RegisterID, dst: XMMRegisterID) {
+        self.formatter.prefix(PRE_SSE_66);
+        self.formatter
+            .two_byte_op_off(OP2_UCOMISD_VsdWsd, dst as _, base, offset);
+    }
+    pub fn ucomiss_rr(&mut self, src: XMMRegisterID, dst: XMMRegisterID) {
+        self.formatter
+            .two_byte_op_rm(OP2_UCOMISD_VsdWsd, dst as _, src.into());
+    }
+
+    pub fn ucomiss_mr(&mut self, offset: i32, base: RegisterID, dst: XMMRegisterID) {
+        self.formatter
+            .two_byte_op_off(OP2_UCOMISD_VsdWsd, dst as _, base, offset);
+    }
+
+    pub fn divsd_rr(&mut self, src: XMMRegisterID, dst: XMMRegisterID) {
+        self.formatter.prefix(PRE_SSE_F2);
+        self.formatter
+            .two_byte_op_rm(OP2_DIVSD_VsdWsd, dst as _, src.into());
+    }
+
+    pub fn divsd_mr(&mut self, offset: i32, base: RegisterID, dst: XMMRegisterID) {
+        self.formatter.prefix(PRE_SSE_F2);
+        self.formatter
+            .two_byte_op_off(OP2_DIVSD_VsdWsd, dst as _, base, offset);
+    }
+    pub fn divss_rr(&mut self, src: XMMRegisterID, dst: XMMRegisterID) {
+        self.formatter.prefix(PRE_SSE_F3);
+        self.formatter
+            .two_byte_op_rm(OP2_DIVSD_VsdWsd, dst as _, src.into());
+    }
+
+    pub fn divss_mr(&mut self, offset: i32, base: RegisterID, dst: XMMRegisterID) {
+        self.formatter.prefix(PRE_SSE_F3);
+        self.formatter
+            .two_byte_op_off(OP2_DIVSD_VsdWsd, dst as _, base, offset);
+    }
+
+    pub fn andps_rr(&mut self, src: XMMRegisterID, dst: XMMRegisterID) {
+        self.formatter
+            .two_byte_op_rm(OP2_ANDPS_VpdWpd, dst as _, src.into());
+    }
+
+    pub fn orps_rr(&mut self, src: XMMRegisterID, dst: XMMRegisterID) {
+        self.formatter
+            .two_byte_op_rm(OP2_ORPS_VpdWpd, dst as _, src.into());
+    }
+
+    pub fn xorps_rr(&mut self, src: XMMRegisterID, dst: XMMRegisterID) {
+        self.formatter
+            .two_byte_op_rm(OP2_XORPD_VpdWpd, dst as _, src.into());
+    }
+
+    pub fn xorpd_rr(&mut self, src: XMMRegisterID, dst: XMMRegisterID) {
+        if src == dst {
+            self.xorps_rr(src, dst);
+            return;
+        }
+        self.formatter.prefix(PRE_SSE_66);
+        self.formatter
+            .two_byte_op_rm(OP2_XORPD_VpdWpd, dst as _, src.into());
+    }
+
+    pub fn andnpd_rr(&mut self, src: XMMRegisterID, dst: XMMRegisterID) {
+        self.formatter.prefix(PRE_SSE_66);
+        self.formatter
+            .two_byte_op_rm(OP2_ANDNPD_VpdWpd, dst as _, src.into());
+    }
+
+    pub fn sqrtsd_rr(&mut self, src: XMMRegisterID, dst: XMMRegisterID) {
+        self.formatter.prefix(PRE_SSE_F2);
+        self.formatter
+            .two_byte_op_rm(OP2_SQRTSD_VsdWsd, dst as _, src.into());
+    }
+
+    pub fn sqrtsd_mr(&mut self, offset: i32, base: RegisterID, dst: XMMRegisterID) {
+        self.formatter.prefix(PRE_SSE_F2);
+        self.formatter
+            .two_byte_op_off(OP2_SQRTSD_VsdWsd, dst as _, base, offset);
+    }
+
+    pub fn sqrtss_rr(&mut self, src: XMMRegisterID, dst: XMMRegisterID) {
+        self.formatter.prefix(PRE_SSE_F3);
+        self.formatter
+            .two_byte_op_rm(OP2_SQRTSD_VsdWsd, dst as _, src.into());
+    }
+
+    pub fn sqrtss_mr(&mut self, offset: i32, base: RegisterID, dst: XMMRegisterID) {
+        self.formatter.prefix(PRE_SSE_F3);
+        self.formatter
+            .two_byte_op_off(OP2_SQRTSD_VsdWsd, dst as _, base, offset);
+    }
+
+    pub fn roundss_rr(&mut self, src: XMMRegisterID, dst: XMMRegisterID, rounding: Rounding) {}
     pub fn set_int32(where_: *mut u8, value: i32) {
         crate::utils::unaligned_store((where_ as usize - 4) as *mut u8, value);
     }
