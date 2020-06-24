@@ -31,19 +31,34 @@ pub enum XMMRegisterID {
     XMM5,
     XMM6,
     XMM7,
+    XMM8,
+    XMM9,
+    XMM10,
+    XMM11,
+    XMM12,
+    XMM13,
+    XMM14,
+    XMM15,
 }
 
 pub struct X86Asm {
     formatter: X86AsmFormatter,
+    index_of_last_watchpoint: i32,
+    index_of_tail_last_watchpoint: i32,
 }
 
 impl X86Asm {
+    pub fn data(&self) -> &[u8] {
+        &self.formatter.buffer.storage
+    }
     pub fn new(x64: bool) -> Self {
         Self {
             formatter: X86AsmFormatter {
                 buffer: AsmBuffer::new(),
                 x64,
             },
+            index_of_last_watchpoint: 0,
+            index_of_tail_last_watchpoint: 0,
         }
     }
 
@@ -51,8 +66,23 @@ impl X86Asm {
         self.formatter.one_byte_op(OP_NOP);
     }
 
-    pub fn label(&self) -> AsmLabel {
-        self.formatter.label()
+    pub fn label(&mut self) -> AsmLabel {
+        let mut result = self.formatter.label();
+        while result.offset() < self.index_of_tail_last_watchpoint as u32 {
+            self.nop();
+            result = self.formatter.label();
+        }
+        result
+    }
+
+    pub fn label_for_watchpoint(&mut self) -> AsmLabel {
+        let mut res = self.formatter.label();
+        if res.offset() as i32 != self.index_of_last_watchpoint {
+            res = self.label();
+        }
+        self.index_of_last_watchpoint = res.offset() as _;
+        self.index_of_tail_last_watchpoint = res.offset() as i32 + 5;
+        res
     }
 
     pub fn push_r(&mut self, r: RegisterID) {
@@ -181,6 +211,1448 @@ impl X86Asm {
             self.formatter.buffer.put_int(imm as _);
         }
     }
+
+    pub fn andl_rr(&mut self, src: RegisterID, dst: RegisterID) {
+        self.formatter.one_byte_op_rm(OP_AND_EvGv, src as _, dst);
+    }
+
+    pub fn andl_mr(&mut self, offset: i32, base: RegisterID, dst: RegisterID) {
+        self.formatter
+            .one_byte_op_off(OP_AND_GvEv, dst as _, base, offset);
+    }
+
+    pub fn andl_rm(&mut self, src: RegisterID, offset: i32, base: RegisterID) {
+        self.formatter
+            .one_byte_op_off(OP_AND_EvGv, src as _, base, offset);
+    }
+
+    pub fn andl_ir(&mut self, imm: i32, dst: RegisterID) {
+        if imm as i8 as i32 == imm {
+            self.formatter
+                .one_byte_op_rm(OP_GROUP1_EvIb, GROUP1_OP_AND as _, dst);
+            self.formatter.buffer.put_byte(imm as _);
+        } else {
+            self.formatter
+                .one_byte_op_rm(OP_GROUP1_EvIz, GROUP1_OP_AND as _, dst);
+            self.formatter.buffer.put_int(imm as _);
+        }
+    }
+    pub fn andl_im(&mut self, imm: i32, offset: i32, base: RegisterID) {
+        if imm as i8 as i32 == imm {
+            self.formatter
+                .one_byte_op_off(OP_GROUP1_EvIb, GROUP1_OP_AND as _, base, offset);
+            self.formatter.buffer.put_byte(imm as _);
+        } else {
+            self.formatter
+                .one_byte_op_off(OP_GROUP1_EvIz, GROUP1_OP_AND as _, base, offset);
+            self.formatter.buffer.put_int(imm as _);
+        }
+    }
+
+    pub fn andq_rr(&mut self, src: RegisterID, dst: RegisterID) {
+        self.formatter.one_byte_op64_rm(OP_AND_EvGv, src as _, dst);
+    }
+
+    pub fn andq_ir(&mut self, imm: i32, dst: RegisterID) {
+        if imm as i8 as i32 == imm {
+            self.formatter
+                .one_byte_op64_rm(OP_GROUP1_EvIb, GROUP1_OP_AND as _, dst);
+            self.formatter.buffer.put_byte(imm as _);
+        } else {
+            self.formatter
+                .one_byte_op64_rm(OP_GROUP1_EvIz, GROUP1_OP_AND as _, dst);
+            self.formatter.buffer.put_int(imm as _);
+        }
+    }
+
+    pub fn negl_r(&mut self, dst: RegisterID) {
+        self.formatter
+            .one_byte_op_rm(OP_GROUP3_Ev, GROUP3_OP_NEG as _, dst);
+    }
+
+    pub fn negq_r(&mut self, dst: RegisterID) {
+        self.formatter
+            .one_byte_op64_rm(OP_GROUP3_Ev, GROUP3_OP_NEG as _, dst);
+    }
+
+    pub fn negl_m(&mut self, offset: i32, base: RegisterID) {
+        self.formatter
+            .one_byte_op_off(OP_GROUP3_Ev, GROUP3_OP_NEG as _, base, offset);
+    }
+    pub fn notl_r(&mut self, dst: RegisterID) {
+        self.formatter
+            .one_byte_op_rm(OP_GROUP3_Ev, GROUP3_OP_NOT as _, dst);
+    }
+
+    pub fn notl_m(&mut self, offset: i32, base: RegisterID) {
+        self.formatter
+            .one_byte_op_off(OP_GROUP3_Ev, GROUP3_OP_NOT as _, base, offset);
+    }
+
+    pub fn orl_rr(&mut self, src: RegisterID, dst: RegisterID) {
+        self.formatter.one_byte_op_rm(OP_OR_EvGv, src as _, dst);
+    }
+
+    pub fn orl_mr(&mut self, offset: i32, base: RegisterID, dst: RegisterID) {
+        self.formatter
+            .one_byte_op_off(OP_OR_EvGv, dst as _, base, offset);
+    }
+
+    pub fn orl_rm(&mut self, src: RegisterID, offset: i32, base: RegisterID) {
+        self.formatter
+            .one_byte_op_off(OP_OR_GvEv, src as _, base, offset);
+    }
+
+    pub fn orl_ir(&mut self, imm: i32, dst: RegisterID) {
+        if imm as i8 as i32 == imm {
+            self.formatter
+                .one_byte_op_rm(OP_GROUP1_EvIb, GROUP1_OP_OR as _, dst);
+            self.formatter.buffer.put_byte(imm as _);
+        } else {
+            self.formatter
+                .one_byte_op_rm(OP_GROUP1_EvIz, GROUP1_OP_OR as _, dst);
+            self.formatter.buffer.put_int(imm as _);
+        }
+    }
+
+    pub fn orl_im(&mut self, imm: i32, offset: i32, base: RegisterID) {
+        if imm as i8 as i32 == imm {
+            self.formatter
+                .one_byte_op_off(OP_GROUP1_EvIb, GROUP1_OP_OR as _, base, offset);
+            self.formatter.buffer.put_byte(imm as _);
+        } else {
+            self.formatter
+                .one_byte_op_off(OP_GROUP1_EvIz, GROUP1_OP_OR as _, base, offset);
+            self.formatter.buffer.put_int(imm as _);
+        }
+    }
+
+    pub fn orq_rr(&mut self, src: RegisterID, dst: RegisterID) {
+        self.formatter.one_byte_op64_rm(OP_OR_EvGv, src as _, dst);
+    }
+
+    pub fn orq_ir(&mut self, imm: i32, dst: RegisterID) {
+        if imm as i8 as i32 == imm {
+            self.formatter
+                .one_byte_op64_rm(OP_GROUP1_EvIb, GROUP1_OP_OR as _, dst);
+            self.formatter.buffer.put_byte(imm as _);
+        } else {
+            self.formatter
+                .one_byte_op64_rm(OP_GROUP1_EvIz, GROUP1_OP_OR as _, dst);
+            self.formatter.buffer.put_int(imm as _);
+        }
+    }
+    pub fn subl_rr(&mut self, src: RegisterID, dst: RegisterID) {
+        self.formatter.one_byte_op_rm(OP_SUB_EvGv, src as _, dst);
+    }
+
+    pub fn subl_mr(&mut self, offset: i32, base: RegisterID, dst: RegisterID) {
+        self.formatter
+            .one_byte_op_off(OP_SUB_EvGv, dst as _, base, offset);
+    }
+
+    pub fn subl_rm(&mut self, src: RegisterID, offset: i32, base: RegisterID) {
+        self.formatter
+            .one_byte_op_off(OP_SUB_GvEv, src as _, base, offset);
+    }
+
+    pub fn subl_ir(&mut self, imm: i32, dst: RegisterID) {
+        if imm as i8 as i32 == imm {
+            self.formatter
+                .one_byte_op_rm(OP_GROUP1_EvIb, GROUP1_OP_SUB as _, dst);
+            self.formatter.buffer.put_byte(imm as _);
+        } else {
+            self.formatter
+                .one_byte_op_rm(OP_GROUP1_EvIz, GROUP1_OP_SUB as _, dst);
+            self.formatter.buffer.put_int(imm as _);
+        }
+    }
+
+    pub fn subl_im(&mut self, imm: i32, offset: i32, base: RegisterID) {
+        if imm as i8 as i32 == imm {
+            self.formatter
+                .one_byte_op_off(OP_GROUP1_EvIb, GROUP1_OP_SUB as _, base, offset);
+            self.formatter.buffer.put_byte(imm as _);
+        } else {
+            self.formatter
+                .one_byte_op_off(OP_GROUP1_EvIz, GROUP1_OP_SUB as _, base, offset);
+            self.formatter.buffer.put_int(imm as _);
+        }
+    }
+    pub fn subq_rr(&mut self, src: RegisterID, dst: RegisterID) {
+        self.formatter.one_byte_op64_rm(OP_SUB_EvGv, src as _, dst);
+    }
+
+    pub fn subq_ir(&mut self, imm: i32, dst: RegisterID) {
+        if imm as i8 as i32 == imm {
+            self.formatter
+                .one_byte_op64_rm(OP_GROUP1_EvIb, GROUP1_OP_SUB as _, dst);
+            self.formatter.buffer.put_byte(imm as _);
+        } else {
+            self.formatter
+                .one_byte_op64_rm(OP_GROUP1_EvIz, GROUP1_OP_SUB as _, dst);
+            self.formatter.buffer.put_int(imm as _);
+        }
+    }
+    pub fn xorl_rr(&mut self, src: RegisterID, dst: RegisterID) {
+        self.formatter.one_byte_op_rm(OP_XOR_EvGv, src as _, dst);
+    }
+
+    pub fn xorl_mr(&mut self, offset: i32, base: RegisterID, dst: RegisterID) {
+        self.formatter
+            .one_byte_op_off(OP_XOR_EvGv, dst as _, base, offset);
+    }
+
+    pub fn xorl_rm(&mut self, src: RegisterID, offset: i32, base: RegisterID) {
+        self.formatter
+            .one_byte_op_off(OP_XOR_GvEv, src as _, base, offset);
+    }
+
+    pub fn xorl_ir(&mut self, imm: i32, dst: RegisterID) {
+        if imm as i8 as i32 == imm {
+            self.formatter
+                .one_byte_op_rm(OP_GROUP1_EvIb, GROUP1_OP_XOR as _, dst);
+            self.formatter.buffer.put_byte(imm as _);
+        } else {
+            self.formatter
+                .one_byte_op_rm(OP_GROUP1_EvIz, GROUP1_OP_XOR as _, dst);
+            self.formatter.buffer.put_int(imm as _);
+        }
+    }
+
+    pub fn xorl_im(&mut self, imm: i32, offset: i32, base: RegisterID) {
+        if imm as i8 as i32 == imm {
+            self.formatter
+                .one_byte_op_off(OP_GROUP1_EvIb, GROUP1_OP_XOR as _, base, offset);
+            self.formatter.buffer.put_byte(imm as _);
+        } else {
+            self.formatter
+                .one_byte_op_off(OP_GROUP1_EvIz, GROUP1_OP_XOR as _, base, offset);
+            self.formatter.buffer.put_int(imm as _);
+        }
+    }
+
+    pub fn xorq_rr(&mut self, src: RegisterID, dst: RegisterID) {
+        self.formatter.one_byte_op64_rm(OP_XOR_EvGv, src as _, dst);
+    }
+
+    pub fn xorq_ir(&mut self, imm: i32, dst: RegisterID) {
+        if imm as i8 as i32 == imm {
+            self.formatter
+                .one_byte_op64_rm(OP_GROUP1_EvIb, GROUP1_OP_XOR as _, dst);
+            self.formatter.buffer.put_byte(imm as _);
+        } else {
+            self.formatter
+                .one_byte_op64_rm(OP_GROUP1_EvIz, GROUP1_OP_XOR as _, dst);
+            self.formatter.buffer.put_int(imm as _);
+        }
+    }
+
+    pub fn rorq_i8r(&mut self, imm: i8, dst: RegisterID) {
+        if imm == 1 {
+            self.formatter
+                .one_byte_op64_rm(OP_GROUP2_Ev1, GROUP2_OP_ROR as _, dst);
+        } else {
+            self.formatter
+                .one_byte_op64_rm(OP_GROUP2_EvIb, GROUP2_OP_ROR as _, dst);
+            self.formatter.buffer.put_byte(imm);
+        }
+    }
+
+    pub fn sarq_clr(&mut self, dst: RegisterID) {
+        self.formatter
+            .one_byte_op64_rm(OP_GROUP2_EvCL, GROUP2_OP_SAR as _, dst);
+    }
+
+    pub fn sarq_i8r(&mut self, imm: i8, dst: RegisterID) {
+        if imm == 1 {
+            self.formatter
+                .one_byte_op64_rm(OP_GROUP2_Ev1, GROUP2_OP_SAR as _, dst);
+        } else {
+            self.formatter
+                .one_byte_op64_rm(OP_GROUP2_EvIb, GROUP2_OP_SAR as _, dst);
+            self.formatter.buffer.put_byte(imm);
+        }
+    }
+
+    pub fn shrq_i8r(&mut self, imm: i8, dst: RegisterID) {
+        if imm == 1 {
+            self.formatter
+                .one_byte_op64_rm(OP_GROUP2_Ev1, GROUP2_OP_SHR as _, dst);
+        } else {
+            self.formatter
+                .one_byte_op64_rm(OP_GROUP2_EvIb, GROUP2_OP_SHR as _, dst);
+            self.formatter.buffer.put_byte(imm);
+        }
+    }
+
+    pub fn shrq_clr(&mut self, dst: RegisterID) {
+        self.formatter
+            .one_byte_op64_rm(OP_GROUP2_EvCL, GROUP2_OP_SHR as _, dst);
+    }
+
+    pub fn shlq_i8r(&mut self, imm: i8, dst: RegisterID) {
+        if imm == 1 {
+            self.formatter
+                .one_byte_op64_rm(OP_GROUP2_Ev1, GROUP2_OP_SHL as _, dst);
+        } else {
+            self.formatter
+                .one_byte_op64_rm(OP_GROUP2_EvIb, GROUP2_OP_SHL as _, dst);
+            self.formatter.buffer.put_byte(imm);
+        }
+    }
+
+    pub fn sarl_i8r(&mut self, imm: i8, dst: RegisterID) {
+        if imm == 1 {
+            self.formatter
+                .one_byte_op_rm(OP_GROUP2_Ev1, GROUP2_OP_SAR as _, dst);
+        } else {
+            self.formatter
+                .one_byte_op_rm(OP_GROUP2_EvIb, GROUP2_OP_SAR as _, dst);
+            self.formatter.buffer.put_byte(imm);
+        }
+    }
+    pub fn sarl_clr(&mut self, dst: RegisterID) {
+        self.formatter
+            .one_byte_op_rm(OP_GROUP2_EvCL, GROUP2_OP_SAR as _, dst);
+    }
+
+    pub fn shrl_i8r(&mut self, imm: i8, dst: RegisterID) {
+        if imm == 1 {
+            self.formatter
+                .one_byte_op_rm(OP_GROUP2_Ev1, GROUP2_OP_SHR as _, dst);
+        } else {
+            self.formatter
+                .one_byte_op_rm(OP_GROUP2_EvIb, GROUP2_OP_SHR as _, dst);
+            self.formatter.buffer.put_byte(imm);
+        }
+    }
+    pub fn shrl_clr(&mut self, dst: RegisterID) {
+        self.formatter
+            .one_byte_op_rm(OP_GROUP2_EvCL, GROUP2_OP_SHR as _, dst);
+    }
+    pub fn shll_i8r(&mut self, imm: i8, dst: RegisterID) {
+        if imm == 1 {
+            self.formatter
+                .one_byte_op_rm(OP_GROUP2_Ev1, GROUP2_OP_SHL as _, dst);
+        } else {
+            self.formatter
+                .one_byte_op_rm(OP_GROUP2_EvIb, GROUP2_OP_SHL as _, dst);
+            self.formatter.buffer.put_byte(imm);
+        }
+    }
+    pub fn shll_clr(&mut self, dst: RegisterID) {
+        self.formatter
+            .one_byte_op_rm(OP_GROUP2_EvCL, GROUP2_OP_SHL as _, dst);
+    }
+
+    pub fn imull_rr(&mut self, src: RegisterID, dst: RegisterID) {
+        self.formatter.one_byte_op_rm(OP2_IMUL_GvEv, dst as _, src);
+    }
+
+    pub fn imull_mr(&mut self, offset: i32, base: RegisterID, dst: RegisterID) {
+        self.formatter
+            .one_byte_op_off(OP2_IMUL_GvEv, dst as _, base, offset);
+    }
+
+    pub fn imulq_rr(&mut self, src: RegisterID, dst: RegisterID) {
+        self.formatter
+            .one_byte_op64_rm(OP2_IMUL_GvEv, dst as _, src);
+    }
+
+    pub fn imull_i32r(&mut self, src: RegisterID, value: i32, dst: RegisterID) {
+        self.formatter.one_byte_op_rm(OP_IMUL_GvEvIz, dst as _, src);
+        self.formatter.buffer.put_int(value);
+    }
+
+    pub fn divl_r(&mut self, dst: RegisterID) {
+        self.formatter
+            .one_byte_op_rm(OP_GROUP3_Ev, GROUP3_OP_DIV as _, dst);
+    }
+    pub fn idivl_r(&mut self, dst: RegisterID) {
+        self.formatter
+            .one_byte_op_rm(OP_GROUP3_Ev, GROUP3_OP_IDIV as _, dst);
+    }
+    pub fn divq_r(&mut self, dst: RegisterID) {
+        self.formatter
+            .one_byte_op64_rm(OP_GROUP3_Ev, GROUP3_OP_DIV as _, dst);
+    }
+    pub fn idivq_r(&mut self, dst: RegisterID) {
+        self.formatter
+            .one_byte_op64_rm(OP_GROUP3_Ev, GROUP3_OP_IDIV as _, dst);
+    }
+    pub fn cmpl_rr(&mut self, src: RegisterID, dst: RegisterID) {
+        self.formatter.one_byte_op_rm(OP_CMP_EvGv, src as _, dst);
+    }
+
+    pub fn cmpl_rm(&mut self, src: RegisterID, offset: i32, base: RegisterID) {
+        self.formatter
+            .one_byte_op_off(OP_CMP_EvGv, src as _, base, offset);
+    }
+    pub fn cmpl_mr(&mut self, src: RegisterID, offset: i32, base: RegisterID) {
+        self.formatter
+            .one_byte_op_off(OP_CMP_GvEv, src as _, base, offset);
+    }
+
+    pub fn cmpl_ir(&mut self, imm: i32, dst: RegisterID) {
+        if imm as i8 as i32 == imm {
+            self.formatter
+                .one_byte_op_rm(OP_GROUP1_EvIb, GROUP1_OP_CMP as _, dst);
+            self.formatter.buffer.put_byte(imm as _);
+        } else {
+            if dst == RegisterID::EAX {
+                self.formatter.one_byte_op(OP_CMP_EAXIv);
+            } else {
+                self.formatter
+                    .one_byte_op_rm(OP_GROUP1_EvIz, GROUP1_OP_CMP as _, dst);
+            }
+            self.formatter.buffer.put_int(imm);
+        }
+    }
+
+    pub fn cmpl_ir_force32(&mut self, imm: i32, dst: RegisterID) {
+        self.formatter
+            .one_byte_op_rm(OP_GROUP1_EvIz, GROUP1_OP_CMP as _, dst);
+        self.formatter.buffer.put_int(imm);
+    }
+
+    pub fn cmpl_im(&mut self, imm: i32, offset: i32, base: RegisterID) {
+        if imm as i8 as i32 == imm {
+            self.formatter
+                .one_byte_op_off(OP_GROUP1_EvIb, GROUP1_OP_CMP as _, base, offset);
+            self.formatter.buffer.put_byte(imm as _);
+        } else {
+            self.formatter
+                .one_byte_op_off(OP_GROUP1_EvIz, GROUP1_OP_CMP as _, base, offset);
+            self.formatter.buffer.put_int(imm as _);
+        }
+    }
+    pub fn cmpb_im(&mut self, imm: i32, offset: i32, base: RegisterID) {
+        if imm as i8 as i32 == imm {
+            self.formatter
+                .one_byte_op_off(OP_GROUP1_EbIb, GROUP1_OP_CMP as _, base, offset);
+            self.formatter.buffer.put_byte(imm as _);
+        } else {
+            panic!("Imm8 expected");
+        }
+    }
+    pub fn cmpb_im_scaled(
+        &mut self,
+        imm: i32,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+    ) {
+        if imm as i8 as i32 == imm {
+            self.formatter.one_byte_op_scaled(
+                OP_GROUP1_EbIb,
+                GROUP1_OP_CMP as _,
+                base,
+                index,
+                scale,
+                offset,
+            );
+            self.formatter.buffer.put_byte(imm as _);
+        } else {
+            panic!("Imm8 expected");
+        }
+    }
+    pub fn cmpl_im_scaled(
+        &mut self,
+        imm: i32,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+    ) {
+        if imm as i8 as i32 == imm {
+            self.formatter.one_byte_op_scaled(
+                OP_GROUP1_EvIb,
+                GROUP1_OP_CMP as _,
+                base,
+                index,
+                scale,
+                offset,
+            );
+            self.formatter.buffer.put_byte(imm as _);
+        } else {
+            self.formatter.one_byte_op_scaled(
+                OP_GROUP1_EvIz,
+                GROUP1_OP_CMP as _,
+                base,
+                index,
+                scale,
+                offset,
+            );
+            self.formatter.buffer.put_int(imm as _);
+        }
+    }
+    pub fn cmpl_im_force32(&mut self, imm: i32, offset: i32, base: RegisterID) {
+        self.formatter
+            .one_byte_op_off(OP_GROUP1_EvIz, GROUP1_OP_CMP as _, base, offset);
+        self.formatter.buffer.put_int(imm as _);
+    }
+
+    pub fn cmpq_rr(&mut self, src: RegisterID, dst: RegisterID) {
+        self.formatter.one_byte_op64_rm(OP_CMP_EvGv, src as _, dst);
+    }
+
+    pub fn cmpq_rm(&mut self, src: RegisterID, offset: i32, base: RegisterID) {
+        self.formatter
+            .one_byte_op64_off(OP_CMP_EvGv, src as _, base, offset);
+    }
+    pub fn cmpq_mr(&mut self, src: RegisterID, offset: i32, base: RegisterID) {
+        self.formatter
+            .one_byte_op64_off(OP_CMP_GvEv, src as _, base, offset);
+    }
+
+    pub fn cmpq_ir(&mut self, imm: i32, dst: RegisterID) {
+        if imm as i8 as i32 == imm {
+            self.formatter
+                .one_byte_op64_rm(OP_GROUP1_EvIb, GROUP1_OP_CMP as _, dst);
+            self.formatter.buffer.put_byte(imm as _);
+        } else {
+            if dst == RegisterID::EAX {
+                self.formatter.one_byte_op64(OP_CMP_EAXIv);
+            } else {
+                self.formatter
+                    .one_byte_op64_rm(OP_GROUP1_EvIz, GROUP1_OP_CMP as _, dst);
+            }
+            self.formatter.buffer.put_int(imm);
+        }
+    }
+
+    pub fn cmpq_ir_force32(&mut self, imm: i32, dst: RegisterID) {
+        self.formatter
+            .one_byte_op64_rm(OP_GROUP1_EvIz, GROUP1_OP_CMP as _, dst);
+        self.formatter.buffer.put_int(imm);
+    }
+
+    pub fn cmpq_im(&mut self, imm: i32, offset: i32, base: RegisterID) {
+        if imm as i8 as i32 == imm {
+            self.formatter
+                .one_byte_op64_off(OP_GROUP1_EvIb, GROUP1_OP_CMP as _, base, offset);
+            self.formatter.buffer.put_byte(imm as _);
+        } else {
+            self.formatter
+                .one_byte_op64_off(OP_GROUP1_EvIz, GROUP1_OP_CMP as _, base, offset);
+            self.formatter.buffer.put_int(imm as _);
+        }
+    }
+    pub fn cmpq_im_scaled(
+        &mut self,
+        imm: i32,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+    ) {
+        if imm as i8 as i32 == imm {
+            self.formatter.one_byte_op64_scaled(
+                OP_GROUP1_EvIb,
+                GROUP1_OP_CMP as _,
+                base,
+                index,
+                scale,
+                offset,
+            );
+            self.formatter.buffer.put_byte(imm as _);
+        } else {
+            self.formatter.one_byte_op64_scaled(
+                OP_GROUP1_EvIz,
+                GROUP1_OP_CMP as _,
+                base,
+                index,
+                scale,
+                offset,
+            );
+            self.formatter.buffer.put_int(imm as _);
+        }
+    }
+    pub fn cmpq_im_force32(&mut self, imm: i32, offset: i32, base: RegisterID) {
+        self.formatter
+            .one_byte_op64_off(OP_GROUP1_EvIz, GROUP1_OP_CMP as _, base, offset);
+        self.formatter.buffer.put_int(imm as _);
+    }
+
+    pub fn cmpw_ir(&mut self, imm: i32, dst: RegisterID) {
+        if imm as i8 as i32 == imm {
+            self.formatter.prefix(PRE_OPERAND_SIZE);
+            self.formatter
+                .one_byte_op_rm(OP_GROUP1_EvIb, GROUP1_OP_CMP as _, dst);
+            self.formatter.buffer.put_byte(imm as _);
+        } else {
+            self.formatter.prefix(PRE_OPERAND_SIZE);
+            self.formatter
+                .one_byte_op_rm(OP_GROUP1_EvIz, GROUP1_OP_CMP as _, dst);
+            self.formatter.buffer.put_int(imm as _);
+        }
+    }
+
+    pub fn cmpw_im(
+        &mut self,
+        imm: i32,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+    ) {
+        if imm as i8 as i32 == imm {
+            self.formatter.prefix(PRE_OPERAND_SIZE);
+            self.formatter.one_byte_op_scaled(
+                OP_GROUP1_EvIb,
+                GROUP1_OP_CMP as _,
+                base,
+                index,
+                scale,
+                offset,
+            );
+            self.formatter.buffer.put_byte(imm as _);
+        } else {
+            self.formatter.prefix(PRE_OPERAND_SIZE);
+            self.formatter.one_byte_op_scaled(
+                OP_GROUP1_EvIz,
+                GROUP1_OP_CMP as _,
+                base,
+                index,
+                scale,
+                offset,
+            );
+            self.formatter.buffer.put_int(imm as _);
+        }
+    }
+
+    pub fn cmpw_rm(
+        &mut self,
+        src: RegisterID,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+    ) {
+        self.formatter.prefix(PRE_OPERAND_SIZE);
+        self.formatter
+            .one_byte_op_scaled(OP_CMP_EvGv, src as _, base, index, scale, offset);
+    }
+
+    pub fn testl_rr(&mut self, src: RegisterID, dst: RegisterID) {
+        self.formatter.one_byte_op_rm(OP_TEST_EvGv, src as _, dst);
+    }
+
+    pub fn testl_i32r(&mut self, imm: i32, dst: RegisterID) {
+        if dst == RegisterID::EAX {
+            self.formatter.one_byte_op(OP_TEST_EAXIv);
+        } else {
+            self.formatter
+                .one_byte_op_rm(OP_GROUP3_EvIz, GROUP3_OP_TEST as _, dst);
+        }
+        self.formatter.buffer.put_int(imm);
+    }
+
+    pub fn testl_i32m(&mut self, imm: i32, offset: i32, base: RegisterID) {
+        self.formatter
+            .one_byte_op_off(OP_GROUP3_EvIz, GROUP3_OP_TEST as _, base, offset);
+        self.formatter.buffer.put_int(imm);
+    }
+
+    pub fn testb_rr(&mut self, src: RegisterID, dst: RegisterID) {
+        self.formatter.one_byte_op8_rm(OP_TEST_EbGb, src as _, dst);
+    }
+
+    pub fn testb_im(&mut self, imm: i32, offset: i32, base: RegisterID) {
+        self.formatter
+            .one_byte_op_off(OP_GROUP3_EbIb, GROUP3_OP_TEST as _, base, offset);
+        self.formatter.buffer.put_byte(imm as _);
+    }
+
+    pub fn testl_i32m_scaled(
+        &mut self,
+        imm: i32,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+    ) {
+        self.formatter.one_byte_op_scaled(
+            OP_GROUP3_EvIz,
+            GROUP3_OP_TEST as _,
+            base,
+            index,
+            scale,
+            offset,
+        );
+        self.formatter.buffer.put_int(imm);
+    }
+
+    pub fn testq_rr(&mut self, src: RegisterID, dst: RegisterID) {
+        self.formatter.one_byte_op64_rm(OP_TEST_EvGv, src as _, dst);
+    }
+
+    pub fn testq_rm(&mut self, src: RegisterID, offset: i32, base: RegisterID) {
+        self.formatter
+            .one_byte_op64_off(OP_TEST_EvGv, src as _, base, offset);
+    }
+
+    pub fn testq_i32r(&mut self, imm: i32, dst: RegisterID) {
+        if dst == RegisterID::EAX {
+            self.formatter.one_byte_op64(OP_TEST_EAXIv);
+        } else {
+            self.formatter
+                .one_byte_op64_rm(OP_GROUP3_EvIz, GROUP3_OP_TEST as _, dst);
+        }
+        self.formatter.buffer.put_int(imm);
+    }
+    pub fn testq_i32m(&mut self, imm: i32, offset: i32, base: RegisterID) {
+        self.formatter
+            .one_byte_op64_off(OP_GROUP3_EvIz, GROUP3_OP_TEST as _, base, offset);
+        self.formatter.buffer.put_int(imm);
+    }
+    pub fn testb_i8r(&mut self, imm: i8, dst: RegisterID) {
+        if dst == RegisterID::EAX {
+            self.formatter.one_byte_op(OP_TEST_ALIb);
+        } else {
+            self.formatter
+                .one_byte_op8_rm(OP_GROUP3_EbIb, GROUP3_OP_TEST as _, dst);
+        }
+        self.formatter.buffer.put_byte(imm);
+    }
+    pub fn bt_ir(&mut self, offset: i8, value: RegisterID) {
+        self.formatter
+            .two_byte_op_rm(OP2_GROUP_BT_EvIb, GROUP_BT_OP_BT as _, value);
+        self.formatter.buffer.put_byte(offset);
+    }
+    pub fn bt_rr(&mut self, offset: RegisterID, value: RegisterID) {
+        self.formatter
+            .two_byte_op_rm(OP2_BT_EvEv, offset as _, value);
+    }
+
+    pub fn setcc_r(&mut self, cond: Condition, dst: RegisterID) {
+        self.formatter.two_byte_op8_rm(setcc_opcode(cond), 0, dst);
+    }
+
+    pub fn sete_r(&mut self, dst: RegisterID) {
+        self.setcc_r(Condition::E, dst);
+    }
+
+    pub fn setz_r(&mut self, dst: RegisterID) {
+        self.sete_r(dst);
+    }
+
+    pub fn cdq(&mut self) {
+        self.formatter.one_byte_op(OP_CDQ);
+    }
+
+    pub fn cqo(&mut self) {
+        self.formatter.one_byte_op64(OP_CDQ);
+    }
+
+    pub fn fstps(&mut self, offset: i32, base: RegisterID) {
+        self.formatter
+            .one_byte_op_off(OP_ESCAPE_D9, ESCAPE_D9_FSTP_singleReal as _, base, offset);
+    }
+    pub fn fstpl(&mut self, offset: i32, base: RegisterID) {
+        self.formatter
+            .one_byte_op_off(OP_ESCAPE_DD, ESCAPE_DD_FSTP_doubleReal as _, base, offset);
+    }
+
+    pub fn xchgl_rr(&mut self, src: RegisterID, dst: RegisterID) {
+        if src == RegisterID::EAX {
+            self.formatter.one_byte_op_r(OP_XCHG_EAX, dst);
+        } else if dst == RegisterID::EAX {
+            self.formatter.one_byte_op_r(OP_XCHG_EAX, src);
+        } else {
+            self.formatter.one_byte_op_rm(OP_XCHG_EvGv, src as _, dst);
+        }
+    }
+
+    pub fn xchgb_rm(&mut self, src: RegisterID, offset: i32, base: RegisterID) {
+        self.formatter
+            .one_byte_op8_off(OP_XOR_EvGb, src as _, base, offset);
+    }
+
+    pub fn xchgb_rm_scaled(
+        &mut self,
+        src: RegisterID,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+    ) {
+        self.formatter
+            .one_byte_op_scaled(OP_XOR_EvGb, src as _, base, index, scale, offset);
+    }
+
+    pub fn xchgw_rm(&mut self, src: RegisterID, offset: i32, base: RegisterID) {
+        self.formatter.prefix(PRE_OPERAND_SIZE);
+        self.formatter
+            .one_byte_op_off(OP_XOR_EvGb, src as _, base, offset);
+    }
+
+    pub fn xchgw_rm_scaled(
+        &mut self,
+        src: RegisterID,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+    ) {
+        self.formatter.prefix(PRE_OPERAND_SIZE);
+        self.formatter
+            .one_byte_op_scaled(OP_XOR_EvGb, src as _, base, index, scale, offset);
+    }
+    pub fn xchgl_rm(&mut self, src: RegisterID, offset: i32, base: RegisterID) {
+        self.formatter
+            .one_byte_op_off(OP_XOR_EvGb, src as _, base, offset);
+    }
+
+    pub fn xchgl_rm_scaled(
+        &mut self,
+        src: RegisterID,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+    ) {
+        self.formatter
+            .one_byte_op_scaled(OP_XOR_EvGb, src as _, base, index, scale, offset);
+    }
+
+    pub fn xchgq_rr(&mut self, src: RegisterID, dst: RegisterID) {
+        if src == RegisterID::EAX {
+            self.formatter.one_byte_op64_r(OP_XCHG_EAX, dst as _);
+        } else if dst == RegisterID::EAX {
+            self.formatter.one_byte_op64_r(OP_XCHG_EAX, src as _);
+        } else {
+            self.formatter.one_byte_op64_rm(OP_XCHG_EvGv, src as _, dst);
+        }
+    }
+    pub fn xchgq_rm(&mut self, src: RegisterID, offset: i32, base: RegisterID) {
+        self.formatter
+            .one_byte_op64_off(OP_XOR_EvGb, src as _, base, offset);
+    }
+
+    pub fn xchgq_rm_scaled(
+        &mut self,
+        src: RegisterID,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+    ) {
+        self.formatter
+            .one_byte_op64_scaled(OP_XOR_EvGb, src as _, base, index, scale, offset);
+    }
+
+    pub fn movl_rr(&mut self, src: RegisterID, dst: RegisterID) {
+        self.formatter.one_byte_op_rm(OP_MOV_EvGv, src as _, dst);
+    }
+
+    pub fn movl_rm(&mut self, src: RegisterID, offset: i32, base: RegisterID) {
+        self.formatter
+            .one_byte_op_off(OP_MOV_EvGv, src as _, base, offset);
+    }
+
+    pub fn movl_rm_disp32(&mut self, src: RegisterID, offset: i32, base: RegisterID) {
+        self.formatter
+            .one_byte_op_off32(OP_MOV_EvGv, src as _, base, offset);
+    }
+
+    pub fn movl_rm_scaled(
+        &mut self,
+        src: RegisterID,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+    ) {
+        self.formatter
+            .one_byte_op_scaled(OP_MOV_EvGv, src as _, base, index, scale, offset);
+    }
+
+    pub fn movl_meax(&mut self, addr: usize) {
+        self.formatter.one_byte_op(OP_MOV_EAXOv);
+        if self.formatter.x64 {
+            self.formatter.buffer.put_long(addr as _);
+        } else {
+            self.formatter.buffer.put_int(addr as _);
+        }
+    }
+    pub fn movl_mr(&mut self, offset: i32, base: RegisterID, dst: RegisterID) {
+        self.formatter
+            .one_byte_op_off(OP_MOV_GvEv, dst as _, base, offset);
+    }
+    pub fn movl_mr_disp32(&mut self, offset: i32, base: RegisterID, dst: RegisterID) {
+        self.formatter
+            .one_byte_op_off32(OP_MOV_GvEv, dst as _, base, offset);
+    }
+    pub fn movl_mr_disp8(&mut self, offset: i32, base: RegisterID, dst: RegisterID) {
+        self.formatter
+            .one_byte_op_off8(OP_MOV_GvEv, dst as _, base, offset);
+    }
+
+    pub fn movl_i32r(&mut self, imm: i32, dst: RegisterID) {
+        self.formatter.one_byte_op_r(OP_MOV_EAXIv, dst);
+        self.formatter.buffer.put_int(imm);
+    }
+
+    pub fn movl_i32m(&mut self, imm: i32, offset: i32, base: RegisterID) {
+        self.formatter
+            .one_byte_op_off(OP_GROUP11_EvIz, GROUP11_MOV as _, base, offset);
+        self.formatter.buffer.put_int(imm);
+    }
+
+    pub fn movl_i32m_scaled(
+        &mut self,
+        imm: i32,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+    ) {
+        self.formatter.one_byte_op_scaled(
+            OP_GROUP11_EvIz,
+            GROUP11_MOV as _,
+            base,
+            index,
+            scale,
+            offset,
+        );
+        self.formatter.buffer.put_int(imm);
+    }
+
+    pub fn movb_i8m(&mut self, imm: i8, offset: i32, base: RegisterID) {
+        self.formatter
+            .one_byte_op_off(OP_GROUP11_EvIb, GROUP11_MOV as _, base, offset);
+        self.formatter.buffer.put_byte(imm);
+    }
+
+    pub fn movb_i8m_scaled(
+        &mut self,
+        imm: i8,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+    ) {
+        self.formatter.one_byte_op_scaled(
+            OP_GROUP11_EvIb,
+            GROUP11_MOV as _,
+            base,
+            index,
+            scale,
+            offset,
+        );
+        self.formatter.buffer.put_byte(imm);
+    }
+    pub fn movb_rm(&mut self, src: RegisterID, offset: i32, base: RegisterID) {
+        self.formatter
+            .one_byte_op_off(OP_MOV_EbGb, src as _, base, offset);
+    }
+
+    pub fn movb_rm_scaled(
+        &mut self,
+        src: RegisterID,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+    ) {
+        self.formatter
+            .one_byte_op_scaled(OP_MOV_EbGb, src as _, base, index, scale, offset);
+    }
+    pub fn movw_rm(&mut self, src: RegisterID, offset: i32, base: RegisterID) {
+        self.formatter
+            .one_byte_op8_off(OP_MOV_EbGb, src as _, base, offset);
+    }
+
+    pub fn movw_rm_scaled(
+        &mut self,
+        src: RegisterID,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+    ) {
+        self.formatter
+            .one_byte_op8_scaled(OP_MOV_EbGb, src as _, base, index, scale, offset);
+    }
+
+    pub fn movw_im(&mut self, imm: i16, offset: i32, base: RegisterID) {
+        self.formatter.prefix(PRE_OPERAND_SIZE);
+        self.formatter
+            .one_byte_op_off(OP_GROUP11_EvIz, GROUP11_MOV as _, base, offset);
+        self.formatter.buffer.put_short(imm);
+    }
+    pub fn movw_im_scaled(
+        &mut self,
+        imm: i16,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+    ) {
+        self.formatter.prefix(PRE_OPERAND_SIZE);
+        self.formatter.one_byte_op_scaled(
+            OP_GROUP11_EvIz,
+            GROUP11_MOV as _,
+            base,
+            index,
+            scale,
+            offset,
+        );
+        self.formatter.buffer.put_short(imm);
+    }
+
+    pub fn movl_eaxm(&mut self, addr: usize) {
+        self.formatter.one_byte_op(OP_MOV_OvEAX);
+        if self.formatter.x64 {
+            self.formatter.buffer.put_long(addr as _);
+        } else {
+            self.formatter.buffer.put_int(addr as _);
+        }
+    }
+    pub fn movq_rr(&mut self, src: RegisterID, dst: RegisterID) {
+        self.formatter.one_byte_op64_rm(OP_MOV_EvGv, src as _, dst);
+    }
+
+    pub fn movq_rm(&mut self, src: RegisterID, offset: i32, base: RegisterID) {
+        self.formatter
+            .one_byte_op64_off(OP_MOV_EvGv, src as _, base, offset);
+    }
+
+    pub fn movq_rm_disp32(&mut self, src: RegisterID, offset: i32, base: RegisterID) {
+        self.formatter
+            .one_byte_op64_off32(OP_MOV_EvGv, src as _, base, offset);
+    }
+
+    pub fn movq_rm_scaled(
+        &mut self,
+        src: RegisterID,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+    ) {
+        self.formatter
+            .one_byte_op64_scaled(OP_MOV_EvGv, src as _, base, index, scale, offset);
+    }
+
+    pub fn movq_meax(&mut self, addr: usize) {
+        self.formatter.one_byte_op64(OP_MOV_EAXOv);
+
+        self.formatter.buffer.put_long(addr as _);
+    }
+    pub fn movq_mr(&mut self, offset: i32, base: RegisterID, dst: RegisterID) {
+        self.formatter
+            .one_byte_op64_off(OP_MOV_GvEv, dst as _, base, offset);
+    }
+    pub fn movq_mr_disp32(&mut self, offset: i32, base: RegisterID, dst: RegisterID) {
+        self.formatter
+            .one_byte_op64_off32(OP_MOV_GvEv, dst as _, base, offset);
+    }
+    pub fn movq_mr_disp8(&mut self, offset: i32, base: RegisterID, dst: RegisterID) {
+        self.formatter
+            .one_byte_op64_off8(OP_MOV_GvEv, dst as _, base, offset);
+    }
+
+    pub fn mov_i32r(&mut self, imm: i32, dst: RegisterID) {
+        self.formatter
+            .one_byte_op64_rm(OP_GROUP11_EvIz, GROUP11_MOV as _, dst as _);
+        self.formatter.buffer.put_int(imm);
+    }
+
+    pub fn movq_i32m(&mut self, imm: i32, offset: i32, base: RegisterID) {
+        self.formatter
+            .one_byte_op64_off(OP_GROUP11_EvIz, GROUP11_MOV as _, base, offset);
+        self.formatter.buffer.put_int(imm);
+    }
+
+    pub fn movq_i32m_scaled(
+        &mut self,
+        imm: i32,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+    ) {
+        self.formatter.one_byte_op64_scaled(
+            OP_GROUP11_EvIz,
+            GROUP11_MOV as _,
+            base,
+            index,
+            scale,
+            offset,
+        );
+        self.formatter.buffer.put_int(imm);
+    }
+
+    pub fn movq_i64r(&mut self, imm: i64, dst: RegisterID) {
+        self.formatter.one_byte_op64_r(OP_MOV_EAXIv, dst as _);
+        self.formatter.buffer.put_long(imm);
+    }
+
+    pub fn movsxd_rr(&mut self, src: RegisterID, dst: RegisterID) {
+        self.formatter
+            .one_byte_op64_rm(OP_MOVSXD_GvEv, dst as _, src);
+    }
+
+    pub fn movzwl_mr(&mut self, offset: i32, base: RegisterID, dst: RegisterID) {
+        self.formatter
+            .two_byte_op_off(OP2_MOVZX_GvEw, dst as _, base, offset);
+    }
+    pub fn movzwl_mr_scaled(
+        &mut self,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+        dst: RegisterID,
+    ) {
+        self.formatter
+            .two_byte_op_scaled(OP2_MOVZX_GvEw, dst as _, base, index, scale, offset);
+    }
+
+    pub fn movswl_mr(&mut self, offset: i32, base: RegisterID, dst: RegisterID) {
+        self.formatter
+            .two_byte_op_off(OP2_MOVSX_GvEw, dst as _, base, offset);
+    }
+    pub fn movswl_mr_scaled(
+        &mut self,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+        dst: RegisterID,
+    ) {
+        self.formatter
+            .two_byte_op_scaled(OP2_MOVZX_GvEb, dst as _, base, index, scale, offset);
+    }
+    pub fn movzbl_mr(&mut self, offset: i32, base: RegisterID, dst: RegisterID) {
+        self.formatter
+            .two_byte_op_off(OP2_MOVZX_GvEb, dst as _, base, offset);
+    }
+    pub fn movsbl_mr(&mut self, offset: i32, base: RegisterID, dst: RegisterID) {
+        self.formatter
+            .two_byte_op_off(OP2_MOVSX_GvEb, dst as _, base, offset);
+    }
+    pub fn movsbl_mr_scaled(
+        &mut self,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+        dst: RegisterID,
+    ) {
+        self.formatter
+            .two_byte_op_scaled(OP2_MOVSX_GvEb, dst as _, base, index, scale, offset);
+    }
+
+    pub fn movzbl_mr_scaled(
+        &mut self,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+        dst: RegisterID,
+    ) {
+        self.formatter
+            .two_byte_op_scaled(OP2_MOVZX_GvEw, dst as _, base, index, scale, offset);
+    }
+    pub fn movzbl_rr(&mut self, src: RegisterID, dst: RegisterID) {
+        // In 64-bit, this may cause an unnecessary REX to be planted (if the dst register
+        // is in the range ESP-EDI, and the src would not have required a REX).  Unneeded
+        // REX prefixes are defined to be silently ignored by the processor.
+        self.formatter.two_byte_op_rm(OP2_MOVZX_GvEb, dst as _, src);
+    }
+
+    pub fn movsbl_rr(&mut self, src: RegisterID, dst: RegisterID) {
+        self.formatter.two_byte_op_rm(OP2_MOVSX_GvEb, dst as _, src);
+    }
+    pub fn movzwl_rr(&mut self, src: RegisterID, dst: RegisterID) {
+        self.formatter.two_byte_op_rm(OP2_MOVZX_GvEw, dst as _, src);
+    }
+    pub fn movswl_rr(&mut self, src: RegisterID, dst: RegisterID) {
+        self.formatter.two_byte_op_rm(OP2_MOVSX_GvEw, dst as _, src);
+    }
+
+    pub fn cmovl_rr(&mut self, cond: Condition, src: RegisterID, dst: RegisterID) {
+        self.formatter.two_byte_op_rm(cmovcc(cond), dst as _, src);
+    }
+
+    pub fn cmovl_mr(&mut self, cond: Condition, offset: i32, base: RegisterID, dst: RegisterID) {
+        self.formatter
+            .two_byte_op_off(cmovcc(cond), dst as _, base, offset);
+    }
+
+    pub fn cmovl_mr_scaled(
+        &mut self,
+        cond: Condition,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+        dst: RegisterID,
+    ) {
+        self.formatter
+            .two_byte_op_scaled(cmovcc(cond), dst as _, base, index, scale, offset);
+    }
+    pub fn cmovq_mr(&mut self, cond: Condition, offset: i32, base: RegisterID, dst: RegisterID) {
+        self.formatter
+            .two_byte_op64_off(cmovcc(cond), dst as _, base, offset);
+    }
+
+    pub fn cmovq_mr_scaled(
+        &mut self,
+        cond: Condition,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+        dst: RegisterID,
+    ) {
+        self.formatter
+            .two_byte_op64_scaled(cmovcc(cond), dst as _, base, index, scale, offset);
+    }
+
+    pub fn cmovq_rr(&mut self, cond: Condition, src: RegisterID, dst: RegisterID) {
+        self.formatter.two_byte_op64_rm(cmovcc(cond), dst as _, src);
+    }
+
+    pub fn leal_mr(&mut self, offset: i32, base: RegisterID, dst: RegisterID) {
+        self.formatter
+            .one_byte_op_off(OP_LEA, dst as _, base, offset);
+    }
+    pub fn leal_mr_scaled(
+        &mut self,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+        dst: RegisterID,
+    ) {
+        self.formatter
+            .one_byte_op_scaled(OP_LEA, dst as _, base, index, scale, offset);
+    }
+
+    pub fn leaq_mr(&mut self, offset: i32, base: RegisterID, dst: RegisterID) {
+        self.formatter
+            .one_byte_op64_off(OP_LEA, dst as _, base, offset);
+    }
+    pub fn leaq_mr_scaled(
+        &mut self,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+        dst: RegisterID,
+    ) {
+        self.formatter
+            .one_byte_op64_scaled(OP_LEA, dst as _, base, index, scale, offset);
+    }
+    pub fn call_rel(&mut self) -> AsmLabel {
+        self.formatter.one_byte_op(OP_CALL_rel32);
+        self.formatter.buffer.put_int(0);
+        self.formatter.label()
+    }
+
+    pub fn call_r(&mut self, r: RegisterID) -> AsmLabel {
+        self.formatter
+            .one_byte_op_rm(OP_GROUP5_Ev, GROUP5_OP_CALLN as _, r);
+        self.formatter.label()
+    }
+
+    pub fn call_m(&mut self, offset: i32, base: RegisterID) {
+        self.formatter
+            .one_byte_op_off(OP_GROUP5_Ev, GROUP5_OP_CALLN as _, base, offset);
+    }
+
+    pub fn jmp(&mut self) -> AsmLabel {
+        self.formatter.one_byte_op(OP_JMP_rel32);
+        self.formatter.buffer.put_int(0);
+        self.formatter.label()
+    }
+    // Return a AssemblerLabel so we have a label to the jump, so we can use this
+    // To make a tail recursive call on x86-64.  The MacroAssembler
+    // really shouldn't wrap this as a Jump, since it can't be linked. :-/
+    pub fn jmp_r(&mut self, r: RegisterID) -> AsmLabel {
+        self.formatter
+            .one_byte_op_rm(OP_GROUP5_Ev, GROUP5_OP_JMPN as _, r);
+        self.formatter.label()
+    }
+
+    pub fn jmp_m(&mut self, offset: i32, base: RegisterID) {
+        self.formatter
+            .one_byte_op_off(OP_GROUP5_Ev, GROUP5_OP_JMPN as _, base, offset);
+    }
+
+    pub fn jcc(&mut self, c: Condition) -> AsmLabel {
+        self.formatter.two_byte_op(jcc_rel32(c));
+        self.formatter.buffer.put_int(0);
+        self.formatter.label()
+    }
+
+    pub fn int3(&mut self) {
+        self.formatter.one_byte_op(OP_INT3);
+    }
+
+    pub fn ret(&mut self) {
+        self.formatter.one_byte_op(OP_RET);
+    }
+
+    pub fn predict_not_taken(&mut self) {
+        self.formatter.prefix(PRE_PREDICT_BRANCH_NOT_TAKEN);
+    }
+
+    pub fn lock(&mut self) {
+        self.formatter.prefix(PRE_LOCK);
+    }
+    pub fn gs(&mut self) {
+        self.formatter.prefix(PRE_GS);
+    }
+
+    pub fn cpuid(&mut self) {
+        self.formatter.two_byte_op(OP2_CPUID);
+    }
+    pub fn set_int32(where_: *mut u8, value: i32) {
+        crate::utils::unaligned_store((where_ as usize - 4) as *mut u8, value);
+    }
+
+    pub fn set_int8(where_: *mut u8, value: i8) {
+        crate::utils::unaligned_store((where_ as usize - 1) as *mut u8, value);
+    }
+
+    pub fn set_pointer(where_: *mut u8, value: *mut u8) {
+        crate::utils::unaligned_store(
+            (where_ as usize - std::mem::size_of::<usize>()) as *mut u8,
+            value,
+        );
+    }
+
+    pub fn set_rel32(from: *mut u8, to: *mut u8) {
+        let offset = to as usize - from as usize;
+        assert_eq!(offset as i32 as usize, offset);
+        Self::set_int32(from, offset as i32);
+    }
+
+    pub fn get_reloc_addr(code: *mut u8, label: AsmLabel) -> *mut u8 {
+        assert!(label.is_set());
+        return (code as usize + label.offset() as usize) as *mut u8;
+    }
+    pub fn get_call_return_offset(call: AsmLabel) -> u32 {
+        call.offset()
+    }
+
+    pub fn replace_with_addr_computation(start: *mut u8, x64: bool) {
+        unsafe {
+            let mut ptr = start;
+            if x64 {
+                if (*ptr & !15) == PRE_REX {
+                    ptr = ptr.offset(1);
+                }
+            }
+            match *ptr {
+                OP_MOV_GvEv => {
+                    *ptr = OP_LEA;
+                }
+                OP_LEA => {}
+                _ => unreachable!(),
+            }
+        }
+    }
+    pub fn replace_with_load(start: *mut u8, x64: bool) {
+        unsafe {
+            let mut ptr = start;
+            if x64 {
+                if (*ptr & !15) == PRE_REX {
+                    ptr = ptr.offset(1);
+                }
+            }
+            match *ptr {
+                OP_MOV_GvEv => {}
+                OP_LEA => {
+                    *ptr = OP_MOV_GvEv;
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    pub fn revert_jump_to_movq_i64r(start: *mut u8, imm: i64, dst: RegisterID) {
+        let instruction_size = 10; // REX.W MOV IMM64
+        let rex_bytes = 1;
+        let opcode_bytes = 1;
+        let ptr = start;
+        unsafe {
+            *ptr = PRE_REX | (1 << 3) | (dst as i32 >> 3) as u8;
+            *ptr.offset(1) = OP_MOV_EAXIv | (dst as i32 & 7) as u8;
+            let bytes = imm.to_ne_bytes();
+            for i in rex_bytes + opcode_bytes..instruction_size {
+                *ptr.offset(i as _) = bytes[i - rex_bytes - opcode_bytes];
+            }
+        }
+    }
+    pub fn revert_jump_to_movl_i32r(start: *mut u8, imm: i32, dst: RegisterID) {
+        let instruction_size = 6; // REX.W MOV IMM64
+        let rex_bytes = 1;
+        let opcode_bytes = 1;
+        let ptr = start;
+        unsafe {
+            *ptr = PRE_REX | (dst as i32 >> 3) as u8;
+            *ptr.offset(1) = OP_MOV_EAXIv | (dst as i32 & 7) as u8;
+            let bytes = imm.to_ne_bytes();
+            for i in rex_bytes + opcode_bytes..instruction_size {
+                *ptr.offset(i as _) = bytes[i - rex_bytes - opcode_bytes];
+            }
+        }
+    }
+    pub fn align(&mut self, alignment: usize) -> AsmLabel {
+        while !self.formatter.buffer.is_aligned(alignment) {
+            self.formatter.one_byte_op(OP_HLT);
+        }
+        self.label()
+    }
+    pub fn replace_with_jump(start: *mut u8, to: *mut u8) {
+        unsafe {
+            let dist = to as usize - (start as usize + 5);
+            crate::utils::unaligned_store(start, OP_JMP_rel32);
+            crate::utils::unaligned_store(start.offset(1), dist);
+        }
+    }
+    pub fn link_jump(&mut self, from: AsmLabel, to: AsmLabel) {
+        let code = self.formatter.buffer.storage.as_mut_ptr();
+        Self::set_rel32(
+            (code as usize + from.offset() as usize) as *mut u8,
+            (code as usize + to.offset() as usize) as *mut u8,
+        );
+    }
+    pub fn link_pointer_or_call(code: *mut u8, label: AsmLabel, value: *mut u8) {
+        Self::set_pointer((code as usize + label.offset() as usize) as *mut u8, value);
+    }
+
+    pub fn slink_jump(&mut self, code: *mut u8, from: AsmLabel, to: *mut u8) {
+        Self::set_rel32((code as usize + from.offset() as usize) as *mut u8, to);
+    }
+
+    pub fn repatch_pointer(where_: *mut u8, value: *mut u8) {
+        Self::set_pointer(where_, value);
+    }
+
+    pub fn revert_jump_to_cmpl_im_force32(start: *mut u8, imm: i32, dst: RegisterID) {
+        let op_bytes: usize = 1;
+        let modrm_bytes: usize = 1;
+        let ptr = start;
+
+        unsafe {
+            *ptr = OP_GROUP1_EvIz;
+            *ptr.offset(1) =
+                ((ModRmMode::Register as i32) << 6) as u8 | (GROUP1_OP_CMP << 3) | dst as u8;
+            let bytes = imm.to_ne_bytes();
+            for i in op_bytes + modrm_bytes..5 {
+                *ptr.offset(i as _) = bytes[i - op_bytes - modrm_bytes];
+            }
+        }
+    }
 }
 
 use super::assembler_buffer::*;
@@ -188,11 +1660,10 @@ use super::assembler_buffer::*;
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
 #[repr(u8)]
 pub enum ModRmMode {
-    NoDisp,
-    Disp0,
-    Disp8,
-    Disp32,
-    Register,
+    NoDisp = 0,
+    Disp8 = 1 << 6,
+    Disp32 = 2 << 6,
+    Register = 3 << 6,
 }
 
 pub struct X86AsmFormatter {
@@ -232,24 +1703,35 @@ pub const COND_C: Condition = Condition::B;
 pub const COND_NC: Condition = Condition::AE;
 pub mod OneByteOpcodeId {
     c!(
+        OP_ADD_EbGb = 0x00,
         OP_ADD_EvGv = 0x01,
         OP_ADD_GvEv = 0x03,
+        OP_ADD_EAXIv = 0x05,
+        OP_OR_EvGb = 0x08,
         OP_OR_EvGv = 0x09,
         OP_OR_GvEv = 0x0B,
+        OP_OR_EAXIv = 0x0D,
         OP_2BYTE_ESCAPE = 0x0F,
+        OP_AND_EvGb = 0x20,
         OP_AND_EvGv = 0x21,
         OP_AND_GvEv = 0x23,
+        OP_SUB_EvGb = 0x28,
         OP_SUB_EvGv = 0x29,
         OP_SUB_GvEv = 0x2B,
+        OP_SUB_EAXIv = 0x2D,
         PRE_PREDICT_BRANCH_NOT_TAKEN = 0x2E,
+        OP_XOR_EvGb = 0x30,
         OP_XOR_EvGv = 0x31,
         OP_XOR_GvEv = 0x33,
+        OP_XOR_EAXIv = 0x35,
         OP_CMP_EvGv = 0x39,
         OP_CMP_GvEv = 0x3B,
+        OP_CMP_EAXIv = 0x3D,
         PRE_REX = 0x40,
         OP_PUSH_EAX = 0x50,
         OP_POP_EAX = 0x58,
         OP_MOVSXD_GvEv = 0x63,
+        PRE_GS = 0x65,
         PRE_OPERAND_SIZE = 0x66,
         PRE_SSE_66 = 0x66,
         OP_PUSH_Iz = 0x68,
@@ -259,6 +1741,7 @@ pub mod OneByteOpcodeId {
         OP_GROUP1_EvIb = 0x83,
         OP_TEST_EbGb = 0x84,
         OP_TEST_EvGv = 0x85,
+        OP_XCHG_EvGb = 0x86,
         OP_XCHG_EvGv = 0x87,
         OP_MOV_EbGb = 0x88,
         OP_MOV_EvGv = 0x89,
@@ -266,9 +1749,13 @@ pub mod OneByteOpcodeId {
         OP_LEA = 0x8D,
         OP_GROUP1A_Ev = 0x8F,
         OP_NOP = 0x90,
+        OP_XCHG_EAX = 0x90,
+        OP_PAUSE = 0x90,
         OP_CDQ = 0x99,
         OP_MOV_EAXOv = 0xA1,
         OP_MOV_OvEAX = 0xA3,
+        OP_TEST_ALIb = 0xA8,
+        OP_TEST_EAXIv = 0xA9,
         OP_MOV_EAXIv = 0xB8,
         OP_GROUP2_EvIb = 0xC1,
         OP_RET = 0xC3,
@@ -277,12 +1764,15 @@ pub mod OneByteOpcodeId {
         OP_INT3 = 0xCC,
         OP_GROUP2_Ev1 = 0xD1,
         OP_GROUP2_EvCL = 0xD3,
+        OP_ESCAPE_D9 = 0xD9,
         OP_ESCAPE_DD = 0xDD,
         OP_CALL_rel32 = 0xE8,
         OP_JMP_rel32 = 0xE9,
+        PRE_LOCK = 0xF0,
         PRE_SSE_F2 = 0xF2,
         PRE_SSE_F3 = 0xF3,
         OP_HLT = 0xF4,
+        OP_GROUP3_Eb = 0xF6,
         OP_GROUP3_EbIb = 0xF6,
         OP_GROUP3_Ev = 0xF7,
         OP_GROUP3_EvIz = 0xF7, // OP_GROUP3_Ev has an immediate, when instruction is a test.
@@ -291,32 +1781,57 @@ pub mod OneByteOpcodeId {
 }
 pub mod TwoByteOpcodeID {
     c!(
+        OP2_UD2 = 0xB,
         OP2_MOVSD_VsdWsd = 0x10,
         OP2_MOVSD_WsdVsd = 0x11,
         OP2_MOVSS_VsdWsd = 0x10,
         OP2_MOVSS_WsdVsd = 0x11,
+        OP2_MOVAPD_VpdWpd = 0x28,
+        OP2_MOVAPS_VpdWpd = 0x28,
         OP2_CVTSI2SD_VsdEd = 0x2A,
         OP2_CVTTSD2SI_GdWsd = 0x2C,
+        OP2_CVTTSS2SI_GdWsd = 0x2C,
         OP2_UCOMISD_VsdWsd = 0x2E,
+        OP2_RDTSC = 0x31,
+        OP2_3BYTE_ESCAPE_3A = 0x3A,
+        OP2_CMOVCC = 0x40,
         OP2_ADDSD_VsdWsd = 0x58,
         OP2_MULSD_VsdWsd = 0x59,
         OP2_CVTSD2SS_VsdWsd = 0x5A,
         OP2_CVTSS2SD_VsdWsd = 0x5A,
         OP2_SUBSD_VsdWsd = 0x5C,
         OP2_DIVSD_VsdWsd = 0x5E,
+        OP2_MOVMSKPD_VdEd = 0x50,
         OP2_SQRTSD_VsdWsd = 0x51,
+        OP2_ANDPS_VpdWpd = 0x54,
         OP2_ANDNPD_VpdWpd = 0x55,
+        OP2_ORPS_VpdWpd = 0x56,
         OP2_XORPD_VpdWpd = 0x57,
         OP2_MOVD_VdEd = 0x6E,
         OP2_MOVD_EdVd = 0x7E,
         OP2_JCC_rel32 = 0x80,
         OP_SETCC = 0x90,
+        OP2_CPUID = 0xA2,
+        OP2_3BYTE_ESCAPE_AE = 0xAE,
         OP2_IMUL_GvEv = 0xAF,
+        OP2_CMPXCHGb = 0xB0,
+        OP2_CMPXCHG = 0xB1,
+        OP2_BTR = 0xB3,
         OP2_MOVZX_GvEb = 0xB6,
+        OP2_POPCNT = 0xB8,
+        OP2_GROUP_BT_EvIb = 0xBA,
+        OP2_BT_EvEv = 0xA3,
+        OP2_BSF = 0xBC,
+        OP2_TZCNT = 0xBC,
+        OP2_BSR = 0xBD,
+        OP2_LZCNT = 0xBD,
         OP2_MOVSX_GvEb = 0xBE,
         OP2_MOVZX_GvEw = 0xB7,
         OP2_MOVSX_GvEw = 0xBF,
+        OP2_XADDb = 0xC0,
+        OP2_XADD = 0xC1,
         OP2_PEXTRW_GdUdIb = 0xC5,
+        OP2_BSWAP = 0xC8,
         OP2_PSLLQ_UdqIb = 0x73,
         OP2_PSRLQ_UdqIb = 0x73,
         OP2_POR_VdqWdq = 0xEB
@@ -326,6 +1841,10 @@ use OneByteOpcodeId::*;
 use TwoByteOpcodeID::*;
 fn jcc_rel32(c: Condition) -> u8 {
     return OP2_JCC_rel32 + c as u8;
+}
+
+fn cmovcc(c: Condition) -> u8 {
+    OP2_CMOVCC + c as u8
 }
 
 fn setcc_opcode(c: Condition) -> u8 {
@@ -351,6 +1870,7 @@ pub mod GroupOpcodeID {
         GROUP3_OP_TEST = 0,
         GROUP3_OP_NOT = 2,
         GROUP3_OP_NEG = 3,
+        GROUP3_OP_DIV = 6,
         GROUP3_OP_IDIV = 7,
         GROUP5_OP_CALLN = 2,
         GROUP5_OP_JMPN = 4,
@@ -358,7 +1878,9 @@ pub mod GroupOpcodeID {
         GROUP11_MOV = 0,
         GROUP14_OP_PSLLQ = 6,
         GROUP14_OP_PSRLQ = 2,
-        ESCAPE_DD_FSTP_doubleReal = 3
+        ESCAPE_D9_FSTP_singleReal = 3,
+        ESCAPE_DD_FSTP_doubleReal = 3,
+        GROUP_BT_OP_BT = 4
     );
 }
 use GroupOpcodeID::*;
@@ -507,11 +2029,53 @@ impl X86AsmFormatter {
         self.buffer.put_byte(op as _);
         self.memory_modrm_disp8(reg, base, offset);
     }
+
+    pub fn one_byte_op64_scaled(
+        &mut self,
+        op: u8,
+        reg: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+        offset: i32,
+    ) {
+        self.emit_rexw(reg, index as _, base as _);
+        self.buffer.put_byte(op as _);
+        self.memory_modrm_scaled(reg, base, index, scale, offset);
+    }
+
+    pub fn one_byte_op64_addr(&mut self, op: u8, reg: i32, addr: u32) {
+        self.emit_rexw(reg, 0, 0);
+        self.buffer.put_byte(op as _);
+        self.memory_modrm_addr(reg, addr);
+    }
     pub fn two_byte_op64_rm(&mut self, op: u8, reg: i32, rm: RegisterID) {
         self.emit_rexw(reg, 0, rm as _);
         self.buffer.put_byte(OP_2BYTE_ESCAPE as _);
         self.buffer.put_byte(op as _);
         self.register_modrm(reg, rm);
+    }
+
+    pub fn two_byte_op64_off(&mut self, op: u8, reg: i32, base: RegisterID, offset: i32) {
+        self.emit_rexw(reg, 0, base as _);
+        self.buffer.put_byte(OP_2BYTE_ESCAPE as _);
+        self.buffer.put_byte(op as _);
+        self.memory_modrm(reg, base, offset);
+    }
+
+    pub fn two_byte_op64_scaled(
+        &mut self,
+        op: u8,
+        reg: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+        offset: i32,
+    ) {
+        self.emit_rexw(reg, index as _, base as _);
+        self.buffer.put_byte(OP_2BYTE_ESCAPE as _);
+        self.buffer.put_byte(op as _);
+        self.memory_modrm_scaled(reg, base, index, scale, offset);
     }
     /// Byte-operands:
     ///
@@ -552,7 +2116,16 @@ impl X86AsmFormatter {
         self.buffer.put_byte(op as _);
         self.register_modrm(reg, rm);
     }
-
+    pub fn one_byte_op8_off(&mut self, op: u8, reg: i32, base: RegisterID, offset: i32) {
+        self.emit_rex_if(
+            self.byte_reg_requires_rex(base as _) | self.byte_reg_requires_rex(reg),
+            reg,
+            0,
+            base as _,
+        );
+        self.buffer.put_byte(op as _);
+        self.memory_modrm(reg, base, offset);
+    }
     pub fn one_byte_op8_scaled(
         &mut self,
         op: u8,
@@ -573,7 +2146,7 @@ impl X86AsmFormatter {
         self.buffer.put_byte(op as _);
         self.memory_modrm_scaled(reg, base, index, scale, offset);
     }
-    pub fn two_byte_op8_rm(&mut self, op: u8, reg: RegisterID, rm: RegisterID) {
+    pub fn two_byte_op8_rm(&mut self, op: u8, reg: i32, rm: RegisterID) {
         self.emit_rex_if(
             self.byte_reg_requires_rex(reg as _) | self.byte_reg_requires_rex(rm as _),
             reg as _,
@@ -583,6 +2156,40 @@ impl X86AsmFormatter {
         self.buffer.put_byte(OP_2BYTE_ESCAPE as _);
         self.buffer.put_byte(op as _);
         self.register_modrm(reg as _, rm);
+    }
+
+    pub fn two_byte_op8_off(&mut self, op: u8, reg: i32, base: RegisterID, offset: i32) {
+        self.emit_rex_if(
+            self.byte_reg_requires_rex(reg) | self.byte_reg_requires_rex(base as _),
+            reg,
+            0,
+            base as _,
+        );
+        self.buffer.put_byte(OP_2BYTE_ESCAPE as _);
+        self.buffer.put_byte(op as _);
+        self.memory_modrm(reg, base, offset);
+    }
+
+    pub fn two_byte_op8_scaled(
+        &mut self,
+        op: u8,
+        reg: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+        offset: i32,
+    ) {
+        self.emit_rex_if(
+            self.byte_reg_requires_rex(reg)
+                || self.byte_reg_requires_rex(base as _)
+                || self.byte_reg_requires_rex(index as _),
+            reg,
+            index as _,
+            base as _,
+        );
+        self.buffer.put_byte(OP_2BYTE_ESCAPE as _);
+        self.buffer.put_byte(op as _);
+        self.memory_modrm_scaled(reg, base, index, scale, offset);
     }
     pub fn two_byte_op8_grm(&mut self, op: u8, group: i32, rm: RegisterID) {
         self.emit_rex_if(self.byte_reg_requires_rex(rm as _), 0, 0, rm as _);
@@ -633,7 +2240,7 @@ impl X86AsmFormatter {
 
     pub fn put_modrm(&mut self, mode: ModRmMode, reg: i32, rm: RegisterID) {
         self.buffer
-            .put_byte(((mode as i8) << 6) | ((reg & 7) << 3) as i8 | (rm as i8 & 7));
+            .put_byte((mode as i8) | ((reg & 7) << 3) as i8 | (rm as i8 & 7));
     }
 
     pub fn put_modrm_sib(
@@ -729,7 +2336,11 @@ impl X86AsmFormatter {
     }
 
     pub fn memory_modrm_addr(&mut self, reg: i32, addr: u32) {
-        self.put_modrm(ModRmMode::NoDisp, reg, Self::NO_BASE);
+        if !self.x64 {
+            self.put_modrm(ModRmMode::NoDisp, reg, Self::NO_BASE);
+        } else {
+            self.put_modrm_sib(ModRmMode::NoDisp, reg, Self::NO_BASE, Self::NO_IX, 0);
+        }
         self.buffer.put_int(addr as _);
     }
 }

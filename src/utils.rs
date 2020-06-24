@@ -186,3 +186,13 @@ fn test_basic() {
 
     assert_eq!(v.len(), 0);
 }
+
+pub fn unaligned_store<T: Copy>(pointer: *mut u8, value: T) {
+    unsafe {
+        std::ptr::write_unaligned(pointer.cast::<T>(), value);
+    }
+}
+
+pub fn unaligned_load<T: Copy>(pointer: *mut u8) -> T {
+    unsafe { std::ptr::read_unaligned(pointer.cast::<T>()) }
+}

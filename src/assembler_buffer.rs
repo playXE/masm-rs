@@ -6,6 +6,9 @@ impl AsmLabel {
     pub const fn new(offset: u32) -> Self {
         Self(offset)
     }
+    pub fn offset(self) -> u32 {
+        self.0
+    }
 
     pub const fn is_set(self) -> bool {
         self.0 != Self::INIT.0
@@ -17,7 +20,7 @@ impl AsmLabel {
 }
 
 pub struct AsmBuffer {
-    storage: Vec<u8>,
+    pub storage: Vec<u8>,
 }
 
 impl AsmBuffer {
