@@ -57,7 +57,7 @@ impl Into<RegisterID> for XMMRegisterID {
 }
 
 pub struct X86Asm {
-    formatter: X86AsmFormatter,
+    pub formatter: X86AsmFormatter,
     index_of_last_watchpoint: i32,
     index_of_tail_last_watchpoint: i32,
 }
@@ -143,6 +143,17 @@ impl X86Asm {
         self.formatter
             .one_byte_op_off(OP_ADD_GvEv, dst as _, base, offset);
     }
+    pub fn addl_mr_scaled(
+        &mut self,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+        dst: RegisterID,
+    ) {
+        self.formatter
+            .one_byte_op_scaled(OP_ADD_GvEv, dst as _, base, index, scale, offset);
+    }
 
     pub fn addl_ar(&mut self, addr: u32, dst: RegisterID) {
         self.formatter
@@ -154,6 +165,17 @@ impl X86Asm {
             .one_byte_op_off(OP_ADD_EvGv, src as _, base, offset);
     }
 
+    pub fn addl_rm_scaled(
+        &mut self,
+        src: RegisterID,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+    ) {
+        self.formatter
+            .one_byte_op_scaled(OP_ADD_EvGv, src as _, base, index, scale, offset);
+    }
     pub fn addl_ir(&mut self, imm: i32, dst: RegisterID) {
         if imm as i8 as i32 == imm {
             self.formatter
@@ -175,6 +197,109 @@ impl X86Asm {
             self.formatter
                 .one_byte_op_off(OP_GROUP1_EvIz, GROUP1_OP_ADD as _, base, offset);
             self.formatter.buffer.put_int(imm as _);
+        }
+    }
+    pub fn addb_rm(&mut self, src: RegisterID, offset: i32, base: RegisterID) {
+        self.formatter
+            .one_byte_op8_off(OP_ADD_EbGb, src as _, base, offset);
+    }
+
+    pub fn addb_rm_scaled(
+        &mut self,
+        src: RegisterID,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+    ) {
+        self.formatter
+            .one_byte_op8_scaled(OP_ADD_EbGb, src as _, base, index, scale, offset);
+    }
+
+    pub fn addb_im(&mut self, imm: i8, offset: i32, base: RegisterID) {
+        self.formatter
+            .one_byte_op8_off(OP_GROUP1_EbIb, GROUP1_OP_ADD as _, base, offset);
+        self.formatter.buffer.put_byte(imm);
+    }
+
+    pub fn addb_im_scaled(
+        &mut self,
+        imm: i8,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+    ) {
+        self.formatter.one_byte_op8_scaled(
+            OP_GROUP1_EbIb,
+            GROUP1_OP_ADD as _,
+            base,
+            index,
+            scale,
+            offset,
+        );
+        self.formatter.buffer.put_byte(imm);
+    }
+
+    pub fn addw_rm(&mut self, src: RegisterID, offset: i32, base: RegisterID) {
+        self.formatter.prefix(PRE_OPERAND_SIZE);
+        self.formatter
+            .one_byte_op8_off(OP_ADD_EvGv, src as _, base, offset);
+    }
+
+    pub fn addw_rm_scaled(
+        &mut self,
+        src: RegisterID,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+    ) {
+        self.formatter.prefix(PRE_OPERAND_SIZE);
+        self.formatter
+            .one_byte_op8_scaled(OP_ADD_EvGv, src as _, base, index, scale, offset);
+    }
+
+    pub fn addw_im(&mut self, imm: i16, offset: i32, base: RegisterID) {
+        if imm as i8 as i16 == imm {
+            self.formatter
+                .one_byte_op8_off(OP_GROUP1_EvIb, GROUP1_OP_ADD as _, base, offset);
+            self.formatter.buffer.put_byte(imm as _);
+        } else {
+            self.formatter
+                .one_byte_op8_off(OP_GROUP1_EvIz, GROUP1_OP_ADD as _, base, offset);
+            self.formatter.buffer.put_short(imm as _);
+        }
+    }
+
+    pub fn addw_im_scaled(
+        &mut self,
+        imm: i16,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+    ) {
+        if imm as i8 as i16 == imm {
+            self.formatter.one_byte_op8_scaled(
+                OP_GROUP1_EvIb,
+                GROUP1_OP_ADD as _,
+                base,
+                index,
+                scale,
+                offset,
+            );
+            self.formatter.buffer.put_byte(imm as _);
+        } else {
+            self.formatter.one_byte_op8_scaled(
+                OP_GROUP1_EvIz,
+                GROUP1_OP_ADD as _,
+                base,
+                index,
+                scale,
+                offset,
+            );
+            self.formatter.buffer.put_short(imm as _);
         }
     }
     pub fn addq_rr(&mut self, src: RegisterID, dst: RegisterID) {
@@ -312,10 +437,32 @@ impl X86Asm {
         self.formatter
             .one_byte_op_off(OP_OR_EvGv, dst as _, base, offset);
     }
+    pub fn orl_mr_scaled(
+        &mut self,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+        dst: RegisterID,
+    ) {
+        self.formatter
+            .one_byte_op_scaled(OP_OR_EvGv, dst as _, base, index, scale, offset);
+    }
 
     pub fn orl_rm(&mut self, src: RegisterID, offset: i32, base: RegisterID) {
         self.formatter
             .one_byte_op_off(OP_OR_GvEv, src as _, base, offset);
+    }
+    pub fn orl_rm_scaled(
+        &mut self,
+        src: RegisterID,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+    ) {
+        self.formatter
+            .one_byte_op_scaled(OP_OR_GvEv, src as _, base, index, scale, offset);
     }
 
     pub fn orl_ir(&mut self, imm: i32, dst: RegisterID) {
@@ -1106,6 +1253,18 @@ impl X86Asm {
             .one_byte_op_off8(OP_MOV_GvEv, dst as _, base, offset);
     }
 
+    pub fn movl_mr_scaled(
+        &mut self,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+        dst: RegisterID,
+    ) {
+        self.formatter
+            .one_byte_op_scaled(OP_MOV_GvEv, dst as _, base, index, scale, offset);
+    }
+
     pub fn movl_i32r(&mut self, imm: i32, dst: RegisterID) {
         self.formatter.one_byte_op_r(OP_MOV_EAXIv, dst);
         self.formatter.buffer.put_int(imm);
@@ -1465,6 +1624,31 @@ impl X86Asm {
         self.formatter
             .one_byte_op64_scaled(OP_LEA, dst as _, base, index, scale, offset);
     }
+
+    pub fn inc_r(&mut self, dst: RegisterID) {
+        self.formatter
+            .one_byte_op_rm(OP_GROUP5_Ev, GROUP1_OP_ADD as _, dst);
+    }
+
+    pub fn incq_r(&mut self, dst: RegisterID) {
+        self.formatter
+            .one_byte_op64_rm(OP_GROUP5_Ev, GROUP1_OP_ADD as _, dst);
+    }
+    pub fn incq_m(&mut self, base: RegisterID, offset: i32) {
+        self.formatter
+            .one_byte_op64_off(OP_GROUP5_Ev, GROUP1_OP_ADD as _, base, offset);
+    }
+
+    pub fn incq_m_scaled(&mut self, offset: i32, base: RegisterID, index: RegisterID, scale: i32) {
+        self.formatter.one_byte_op64_scaled(
+            OP_GROUP5_Ev,
+            GROUP1_OP_ADD as _,
+            base,
+            index,
+            scale,
+            offset,
+        );
+    }
     pub fn call_rel(&mut self) -> AsmLabel {
         self.formatter.one_byte_op(OP_CALL_rel32);
         self.formatter.buffer.put_int(0);
@@ -1750,41 +1934,51 @@ impl X86Asm {
         self.formatter
             .two_byte_op_scaled(OP2_MOVSD_WsdVsd, src as _, base, index, scale, offset);
     }
-    pub fn movsd_mr(&mut self, src: XMMRegisterID, offset: i32, base: RegisterID) {
+
+    pub fn movsd_mr_addr(&mut self, addr: u32, dst: XMMRegisterID) {
         self.formatter.prefix(PRE_SSE_F2);
         self.formatter
-            .two_byte_op_off(OP2_MOVSD_VsdWsd, src as _, base, offset);
+            .two_byte_op_x86addr(OP2_MOVSD_VsdWsd, dst as _, addr);
+    }
+    pub fn movsd_mr(&mut self, offset: i32, base: RegisterID, dst: XMMRegisterID) {
+        self.formatter.prefix(PRE_SSE_F2);
+        self.formatter
+            .two_byte_op_off(OP2_MOVSD_VsdWsd, dst as _, base, offset);
     }
 
     pub fn movsd_mr_scaled(
         &mut self,
-        src: XMMRegisterID,
         offset: i32,
         base: RegisterID,
         index: RegisterID,
         scale: i32,
+        dst: XMMRegisterID,
     ) {
         self.formatter.prefix(PRE_SSE_F2);
         self.formatter
-            .two_byte_op_scaled(OP2_MOVSD_VsdWsd, src as _, base, index, scale, offset);
+            .two_byte_op_scaled(OP2_MOVSD_VsdWsd, dst as _, base, index, scale, offset);
     }
-    pub fn movss_mr(&mut self, src: XMMRegisterID, offset: i32, base: RegisterID) {
+    pub fn movss_mr(&mut self, offset: i32, base: RegisterID, dst: XMMRegisterID) {
         self.formatter.prefix(PRE_SSE_F3);
         self.formatter
-            .two_byte_op_off(OP2_MOVSD_VsdWsd, src as _, base, offset);
+            .two_byte_op_off(OP2_MOVSD_VsdWsd, dst as _, base, offset);
     }
-
+    pub fn movss_mr_addr(&mut self, addr: u32, dst: XMMRegisterID) {
+        self.formatter.prefix(PRE_SSE_F3);
+        self.formatter
+            .two_byte_op_x86addr(OP2_MOVSD_VsdWsd, dst as _, addr);
+    }
     pub fn movss_mr_scaled(
         &mut self,
-        src: XMMRegisterID,
         offset: i32,
         base: RegisterID,
         index: RegisterID,
         scale: i32,
+        dst: XMMRegisterID,
     ) {
         self.formatter.prefix(PRE_SSE_F3);
         self.formatter
-            .two_byte_op_scaled(OP2_MOVSD_VsdWsd, src as _, base, index, scale, offset);
+            .two_byte_op_scaled(OP2_MOVSD_VsdWsd, dst as _, base, index, scale, offset);
     }
 
     pub fn mulsd_rr(&mut self, src: XMMRegisterID, dst: XMMRegisterID) {
@@ -1982,16 +2176,25 @@ impl X86Asm {
 
     pub fn roundss_rr(&mut self, src: XMMRegisterID, dst: XMMRegisterID, rounding: Rounding) {
         self.formatter.prefix(PRE_SSE_66);
-        self.formatter.three_byte_op_rm(OP2_3BYTE_ESCAPE_3A,OP3_ROUNDSS_VssWssIb,dst as _,src.into());
+        self.formatter.three_byte_op_rm(
+            OP2_3BYTE_ESCAPE_3A,
+            OP3_ROUNDSS_VssWssIb,
+            dst as _,
+            src.into(),
+        );
         self.formatter.buffer.put_byte(rounding as i8);
     }
 
-    pub fn roundsd_rr(&mut self,src: XMMRegisterID,dst: XMMRegisterID,rounding: Rounding) {
+    pub fn roundsd_rr(&mut self, src: XMMRegisterID, dst: XMMRegisterID, rounding: Rounding) {
         self.formatter.prefix(PRE_SSE_66);
-        self.formatter.three_byte_op_rm(OP2_3BYTE_ESCAPE_3A, OP3_ROUNDSD_VssWssIb,dst as _,src.into());
+        self.formatter.three_byte_op_rm(
+            OP2_3BYTE_ESCAPE_3A,
+            OP3_ROUNDSD_VssWssIb,
+            dst as _,
+            src.into(),
+        );
         self.formatter.buffer.put_byte(rounding as i8);
     }
-
 
     pub fn set_int32(where_: *mut u8, value: i32) {
         crate::utils::unaligned_store((where_ as usize - 4) as *mut u8, value);
@@ -2146,7 +2349,7 @@ pub enum ModRmMode {
 }
 
 pub struct X86AsmFormatter {
-    buffer: AsmBuffer,
+    pub buffer: AsmBuffer,
     x64: bool,
 }
 pub enum Condition {
@@ -2828,25 +3031,32 @@ impl X86AsmFormatter {
         self.buffer.put_int(addr as _);
     }
 
-    pub fn three_byte_op(&mut self,prefix: u8,opcode: u8) {
+    pub fn three_byte_op(&mut self, prefix: u8, opcode: u8) {
         self.buffer.put_byte(OP_2BYTE_ESCAPE as _);
         self.buffer.put_byte(prefix as _);
         self.buffer.put_byte(opcode as _);
     }
 
-    pub fn three_byte_op_rm(&mut self,prefix: u8,op: u8,reg: i32,rm: RegisterID) {
-        self.emit_rex_if_needed(reg as _,0,rm as _);
+    pub fn three_byte_op_rm(&mut self, prefix: u8, op: u8, reg: i32, rm: RegisterID) {
+        self.emit_rex_if_needed(reg as _, 0, rm as _);
         self.buffer.put_byte(OP_2BYTE_ESCAPE as _);
         self.buffer.put_byte(prefix as _);
         self.buffer.put_byte(op as _);
-        self.register_modrm(reg,rm);
+        self.register_modrm(reg, rm);
     }
 
-    pub fn three_byte_op_disp(&mut self,prefix: u8,op: u8,reg: i32,base: RegisterID,disp: i32) {
-        self.emit_rex_if_needed(reg,0,base as _);
+    pub fn three_byte_op_disp(
+        &mut self,
+        prefix: u8,
+        op: u8,
+        reg: i32,
+        base: RegisterID,
+        disp: i32,
+    ) {
+        self.emit_rex_if_needed(reg, 0, base as _);
         self.buffer.put_byte(OP_2BYTE_ESCAPE as _);
         self.buffer.put_byte(prefix as _);
         self.buffer.put_byte(op as _);
-        self.memory_modrm(reg,base,disp);
+        self.memory_modrm(reg, base, disp);
     }
 }

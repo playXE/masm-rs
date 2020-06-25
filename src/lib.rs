@@ -5,3 +5,4 @@ pub mod asm_constant_pool;
 pub mod assembler_buffer;
 pub mod utils;
 pub mod x86_assembler;
+pub mod x86masm;
