@@ -1,8 +1,51 @@
-use crate::{assembler_buffer::*, x86_assembler::*};
+use crate::{assembler_buffer::*, x86_assembler::*, *};
 
 pub const DOUBLE_CONDITION_BIT_SPECIAL: u8 = 0x20;
 pub const DOUBLE_CONDITION_BIT_INVERT: u8 = 0x10;
 pub const DOUBLE_CONDITION_BITS: u8 = 0x10 | 0x20;
+pub const REPATCH_OFFSET_CALL_R11: usize = 3;
+pub struct DataLabelPtr {
+    label: AsmLabel,
+}
+
+impl DataLabelPtr {
+    pub fn new(masm: &mut MacroAssemblerX86) -> Self {
+        Self {
+            label: masm.asm.label(),
+        }
+    }
+
+    pub fn is_set(&self) -> bool {
+        self.label.is_set()
+    }
+}
+
+pub struct X86Call {
+    pub label: AsmLabel,
+    pub flag: u8,
+}
+
+impl X86Call {
+    pub fn new(jmp: AsmLabel, flags: u8) -> Self {
+        Self {
+            label: jmp,
+            flag: flags,
+        }
+    }
+    pub const INIT: Self = Self {
+        flag: CallFlags::None as u8,
+        label: AsmLabel::INIT,
+    };
+
+    pub fn is_flag_set(&self, f: CallFlags) -> bool {
+        (self.flag & f as u8) != 0
+    }
+
+    pub fn from_tail_jump(jmp: Jump) -> Self {
+        Self::new(jmp.label, CallFlags::Linkable as _)
+    }
+}
+
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
 #[repr(u8)]
 pub enum RelationalCondition {
@@ -154,6 +197,15 @@ impl MacroAssemblerX86 {
             x64,
             asm: X86Asm::new(x64),
         }
+    }
+
+    pub fn pad_before_patch(&mut self) {
+        self.asm.label();
+    }
+
+    pub fn move_with_patch_ptr(&mut self, initial_value: usize, dest: RegisterID) -> DataLabelPtr {
+        self.asm.movq_i64r(initial_value as _, dest);
+        DataLabelPtr::new(self)
     }
     pub fn load32(&mut self, mem: Mem, dest: RegisterID) {
         match mem {
@@ -1131,5 +1183,214 @@ impl MacroAssemblerX86 {
         if src != dst {
             self.asm.movaps_rr(src, dst);
         }
+    }
+
+    pub fn add32_to_addr(&mut self, imm: i32, addr: usize) {
+        self.move_i64(addr as _, SCRATCH_REG);
+        self.add32_im(imm, Mem::Base(SCRATCH_REG, 0));
+    }
+
+    pub fn load8_addr(&mut self, addr: usize, dest: RegisterID) {
+        self.move_i64(addr as _, dest);
+        self.load8(Mem::Base(dest, 0), dest);
+    }
+
+    pub fn load16_addr(&mut self, addr: usize, dest: RegisterID) {
+        self.move_i64(addr as _, dest);
+        self.load16(Mem::Base(dest, 0), dest);
+    }
+
+    pub fn load32_addr(&mut self, addr: usize, dest: RegisterID) {
+        if dest == RegisterID::EAX {
+            self.asm.movl_meax(addr);
+        } else {
+            self.move_i64(addr as _, dest);
+            self.load32(Mem::Base(dest, 0), dest);
+        }
+    }
+
+    pub fn convert_int32_to_double_imm(&mut self, imm: i32, dst: XMMRegisterID) {
+        self.move_i32(imm, SCRATCH_REG);
+        self.convert_int32_to_double(SCRATCH_REG, dst);
+    }
+
+    pub fn store32_addr(&mut self, source: RegisterID, addr: usize) {
+        if source == RegisterID::EAX {
+            self.asm.movl_eaxm(addr as _);
+        } else {
+            self.move_i64(addr as _, SCRATCH_REG);
+            self.store32(source, Mem::Base(SCRATCH_REG, 0));
+        }
+    }
+
+    pub fn store8_addr(&mut self, source: RegisterID, addr: usize) {
+        self.move_i64(addr as _, SCRATCH_REG);
+        self.store8(source, Mem::Base(SCRATCH_REG, 0));
+    }
+
+    pub fn load64(&mut self, mem: Mem, dest: RegisterID) {
+        match mem {
+            Mem::Base(base, offset) => {
+                self.asm.movq_mr(offset, base, dest);
+            }
+            Mem::Local(ix) => {
+                self.asm.movq_mr(ix, RegisterID::EBP, dest);
+            }
+            Mem::Index(base, index, scale, offset) => {
+                self.asm.movq_mr_scaled(offset, base, index, scale, dest);
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn store64(&mut self, src: RegisterID, dest: Mem) {
+        match dest {
+            Mem::Base(base, offset) => self.asm.movq_rm(src, offset, base),
+            Mem::Local(ix) => self.asm.movq_rm(src, ix, RegisterID::EBP),
+            Mem::Index(base, index, scale, offset) => {
+                self.asm.movq_rm_scaled(src, offset, base, index, scale)
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn store64_imm32(&mut self, imm: i32, dest: Mem) {
+        match dest {
+            Mem::Base(base, offset) => self.asm.movq_i32m(imm, offset, base),
+            Mem::Local(ix) => self.asm.movq_i32m(imm, ix, RegisterID::EBP),
+            Mem::Index(base, index, scale, offset) => {
+                self.asm.movq_i32m_scaled(imm, offset, base, index, scale)
+            }
+            _ => unreachable!(),
+        }
+    }
+    pub fn store64_imm64(&mut self, imm: i64, dest: Mem) {
+        if imm as i32 as i64 == imm {
+            self.store64_imm32(imm as _, dest);
+            return;
+        }
+        self.move_i64(imm, SCRATCH_REG);
+        self.store64(SCRATCH_REG, dest);
+    }
+
+    pub fn sub64(&mut self, src: RegisterID, dest: RegisterID) {
+        self.asm.subq_rr(src, dest);
+    }
+
+    pub fn sub64_imm32(&mut self, imm: i32, dest: RegisterID) {
+        self.asm.subq_ir(imm, dest);
+    }
+
+    pub fn sub64_imm64(&mut self, imm: i64, dest: RegisterID) {
+        self.move_i64(imm, SCRATCH_REG);
+        self.asm.subq_rr(SCRATCH_REG, dest);
+    }
+
+    pub fn call64(&mut self) -> X86Call {
+        #[cfg(target_family = "windows")]
+        {
+            // JIT relies on the CallerFrame (frame pointer) being put on the stack,
+            // On Win64 we need to manually copy the frame pointer to the stack, since MSVC may not maintain a frame pointer on 64-bit.
+            // See http://msdn.microsoft.com/en-us/library/9z1stfyw.aspx where it's stated that rbp MAY be used as a frame pointer.
+            self.store64(RegisterID::EAX, Mem::Base(RegisterID::EBP, -16));
+            // On Windows we need to copy the arguments that don't fit in registers to the stack location where the callee expects to find them.
+            // We don't know the number of arguments at this point, so the arguments (5, 6, ...) should always be copied.
+
+            // Copy argument 5
+            self.load64(
+                Mem::Base(RegisterID::ESP, 4 * std::mem::size_of::<u64>() as i32),
+                SCRATCH_REG,
+            );
+            self.store64(
+                SCRATCH_REG,
+                Mem::Base(RegisterID::ESP, -4 * std::mem::size_of::<u64>() as i32),
+            );
+            // Copy argument 6
+            self.load64(
+                Mem::Base(RegisterID::ESP, 5 * std::mem::size_of::<u64>() as i32),
+                SCRATCH_REG,
+            );
+            self.store64(
+                SCRATCH_REG,
+                Mem::Base(RegisterID::ESP, -3 * std::mem::size_of::<u64>() as i32),
+            );
+            // We also need to allocate the shadow space on the stack for the 4 parameter registers.
+            // Also, we should allocate 16 bytes for the frame pointer, and return address (not populated).
+            // In addition, we need to allocate 16 bytes for two more parameters, since the call can have up to 6 parameters.
+            self.sub64_imm32(8 * std::mem::size_of::<i64>() as i32, RegisterID::ESP);
+        }
+        let _ = self.move_with_patch_ptr(0, SCRATCH_REG);
+        let result = X86Call::new(self.asm.call_r(SCRATCH_REG), CallFlags::Linkable as _);
+        #[cfg(target_family = "windows")]
+        {
+            self.add64_imm32(8 * 8, RegisterID::ESP, RegisterID::ESP);
+        }
+        return result;
+    }
+
+    pub fn call_ptr(&mut self, ptr: *const u8) {
+        if self.x64 {
+            self.move_i64(ptr as _, SCRATCH_REG);
+        } else {
+            self.move_i32(ptr as _, SCRATCH_REG);
+        }
+        self.asm.call_r(SCRATCH_REG);
+    }
+
+    pub fn add64(&mut self, a: RegisterID, b: RegisterID, dest: RegisterID) {
+        self.x86_lea64(Mem::Index(a, b, 0, 0), dest);
+    }
+
+    pub fn add64_rr(&mut self, src: RegisterID, dest: RegisterID) {
+        self.asm.addq_rr(src, dest);
+    }
+    pub fn add64_imm64(&mut self, imm: i64, dest: RegisterID) {
+        self.move_i64(imm, SCRATCH_REG);
+        self.add64_rr(SCRATCH_REG, dest);
+    }
+    pub fn add64_imm32(&mut self, imm: i32, src: RegisterID, dest: RegisterID) {
+        self.asm.leaq_mr(imm, src, dest);
+    }
+
+    pub fn x86_lea64(&mut self, index: Mem, dest: RegisterID) {
+        match index {
+            Mem::Index(base, index, scale, offset) => {
+                if scale == 0 && offset == 0 {
+                    if base == dest {
+                        self.asm.addq_rr(index, dest);
+                        return;
+                    }
+                    if index == dest {
+                        self.asm.addq_rr(base, dest);
+                        return;
+                    }
+                }
+                self.asm.leaq_mr_scaled(offset, base, index, scale, dest);
+            }
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl super::MacroAssemblerBase for MacroAssemblerX86 {
+    fn link_call(code: *mut u8, call_label: AsmLabel, func: *const u8, flags: u8) {
+        if (flags & CallFlags::Near as u8) == 0 {
+            X86Asm::link_pointer_or_call(
+                code,
+                call_label.label_at_offset(-(REPATCH_OFFSET_CALL_R11 as i32)),
+                func as *mut u8,
+            );
+            return;
+        } else if (flags & CallFlags::Tail as u8) != 0 {
+            X86Asm::slink_jump(code, call_label, func as *mut u8);
+        } else {
+            X86Asm::slink_jump(code, call_label, func as *mut u8);
+        }
+    }
+    fn link_pointer(code: *mut u8, label: assembler_buffer::AsmLabel, value: *mut u8) {
+        X86Asm::link_pointer_or_call(code, label, value);
+    }
+    fn finalize(self) -> Vec<u8> {
+        self.asm.formatter.buffer.storage
     }
 }

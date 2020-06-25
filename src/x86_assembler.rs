@@ -1430,6 +1430,18 @@ impl X86Asm {
             .one_byte_op64_off8(OP_MOV_GvEv, dst as _, base, offset);
     }
 
+    pub fn movq_mr_scaled(
+        &mut self,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+        dst: RegisterID,
+    ) {
+        self.formatter
+            .one_byte_op64_scaled(OP_MOV_GvEv, dst as _, base, index, scale, offset);
+    }
+
     pub fn mov_i32r(&mut self, imm: i32, dst: RegisterID) {
         self.formatter
             .one_byte_op64_rm(OP_GROUP11_EvIz, GROUP11_MOV as _, dst as _);
@@ -2205,15 +2217,17 @@ impl X86Asm {
     }
 
     pub fn set_pointer(where_: *mut u8, value: *mut u8) {
-        crate::utils::unaligned_store(
-            (where_ as usize - std::mem::size_of::<usize>()) as *mut u8,
-            value,
-        );
+        unsafe {
+            crate::utils::unaligned_store::<*mut u8>(
+                where_.cast::<*mut u8>().offset(-1).cast(),
+                value,
+            );
+        }
     }
 
     pub fn set_rel32(from: *mut u8, to: *mut u8) {
-        let offset = to as usize - from as usize;
-        assert_eq!(offset as i32 as usize, offset);
+        let offset = to as isize - from as isize;
+        assert_eq!(offset as i32 as isize, offset);
         Self::set_int32(from, offset as i32);
     }
 
@@ -2312,7 +2326,7 @@ impl X86Asm {
         Self::set_pointer((code as usize + label.offset() as usize) as *mut u8, value);
     }
 
-    pub fn slink_jump(&mut self, code: *mut u8, from: AsmLabel, to: *mut u8) {
+    pub fn slink_jump(code: *mut u8, from: AsmLabel, to: *mut u8) {
         Self::set_rel32((code as usize + from.offset() as usize) as *mut u8, to);
     }
 

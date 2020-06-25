@@ -1,5 +1,5 @@
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
-pub struct AsmLabel(u32);
+pub struct AsmLabel(pub u32);
 
 impl AsmLabel {
     pub const INIT: Self = Self(u32::MAX);
@@ -14,8 +14,8 @@ impl AsmLabel {
         self.0 != Self::INIT.0
     }
 
-    pub const fn label_at_offset(self, off: u32) -> Self {
-        Self(self.0 + off)
+    pub const fn label_at_offset(self, off: i32) -> Self {
+        Self((self.0 as i32 + off) as u32)
     }
 }
 
