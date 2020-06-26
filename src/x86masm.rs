@@ -1676,3 +1676,9 @@ impl super::MacroAssemblerBase for MacroAssemblerX86 {
         self.asm.formatter.buffer.storage
     }
 }
+
+pub enum CallConv {
+    CDecl,
+    SystemV,
+    Windows64,
+}
