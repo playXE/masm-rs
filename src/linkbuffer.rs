@@ -14,7 +14,7 @@ impl<T: MacroAssemblerBase> LinkBuffer<T> {
         }
     }
 
-    pub fn link_call(&self, at: AsmLabel, with: *const u8) {
+    pub fn link_call(&self, at: Call, with: *const u8) {
         T::link_call(self.code, at, with as *mut _, 0);
     }
 }

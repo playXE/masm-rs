@@ -428,7 +428,15 @@ impl X86Asm {
         self.formatter
             .one_byte_op_off(OP_GROUP3_Ev, GROUP3_OP_NOT as _, base, offset);
     }
+    pub fn notq_r(&mut self, dst: RegisterID) {
+        self.formatter
+            .one_byte_op64_rm(OP_GROUP3_Ev, GROUP3_OP_NOT as _, dst);
+    }
 
+    pub fn notq_m(&mut self, offset: i32, base: RegisterID) {
+        self.formatter
+            .one_byte_op64_off(OP_GROUP3_Ev, GROUP3_OP_NOT as _, base, offset);
+    }
     pub fn orl_rr(&mut self, src: RegisterID, dst: RegisterID) {
         self.formatter.one_byte_op_rm(OP_OR_EvGv, src as _, dst);
     }
@@ -621,6 +629,10 @@ impl X86Asm {
         }
     }
 
+    pub fn rorq_clr(&mut self, dst: RegisterID) {
+        self.formatter
+            .one_byte_op64_rm(OP_GROUP2_EvCL, GROUP2_OP_ROR as _, dst);
+    }
     pub fn sarq_clr(&mut self, dst: RegisterID) {
         self.formatter
             .one_byte_op64_rm(OP_GROUP2_EvCL, GROUP2_OP_SAR as _, dst);
@@ -662,6 +674,11 @@ impl X86Asm {
                 .one_byte_op64_rm(OP_GROUP2_EvIb, GROUP2_OP_SHL as _, dst);
             self.formatter.buffer.put_byte(imm);
         }
+    }
+
+    pub fn shlq_clr(&mut self, dst: RegisterID) {
+        self.formatter
+            .one_byte_op64_rm(OP_GROUP2_EvCL, GROUP2_OP_SHL as _, dst);
     }
 
     pub fn sarl_i8r(&mut self, imm: i8, dst: RegisterID) {
@@ -709,17 +726,17 @@ impl X86Asm {
     }
 
     pub fn imull_rr(&mut self, src: RegisterID, dst: RegisterID) {
-        self.formatter.one_byte_op_rm(OP2_IMUL_GvEv, dst as _, src);
+        self.formatter.two_byte_op_rm(OP2_IMUL_GvEv, dst as _, src);
     }
 
     pub fn imull_mr(&mut self, offset: i32, base: RegisterID, dst: RegisterID) {
         self.formatter
-            .one_byte_op_off(OP2_IMUL_GvEv, dst as _, base, offset);
+            .two_byte_op_off(OP2_IMUL_GvEv, dst as _, base, offset);
     }
 
     pub fn imulq_rr(&mut self, src: RegisterID, dst: RegisterID) {
         self.formatter
-            .one_byte_op64_rm(OP2_IMUL_GvEv, dst as _, src);
+            .two_byte_op64_rm(OP2_IMUL_GvEv, dst as _, src);
     }
 
     pub fn imull_i32r(&mut self, src: RegisterID, value: i32, dst: RegisterID) {
@@ -1697,6 +1714,11 @@ impl X86Asm {
             .one_byte_op_off(OP_GROUP5_Ev, GROUP5_OP_JMPN as _, base, offset);
     }
 
+    pub fn jmp_maddr(&mut self, addr: usize) {
+        self.formatter
+            .one_byte_op_x86addr(OP_GROUP5_Ev, GROUP5_OP_JMPN as _, addr as _);
+    }
+
     pub fn jcc(&mut self, c: Condition) -> AsmLabel {
         self.formatter.two_byte_op(jcc_rel32(c));
         self.formatter.buffer.put_int(0);
@@ -2616,7 +2638,7 @@ impl X86AsmFormatter {
 
     pub fn one_byte_op_r(&mut self, op: u8, r: RegisterID) {
         self.emit_rex_if_needed(0, 0, r as _);
-        self.buffer.put_byte(op as _);
+        self.buffer.put_byte(op as i8 + (r as i8 & 7));
     }
     pub fn one_byte_op_rm(&mut self, op: u8, reg: i32, rm: RegisterID) {
         self.emit_rex_if_needed(reg, 0, rm as _);

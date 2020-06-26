@@ -20,32 +20,6 @@ impl DataLabelPtr {
     }
 }
 
-pub struct X86Call {
-    pub label: AsmLabel,
-    pub flag: u8,
-}
-
-impl X86Call {
-    pub fn new(jmp: AsmLabel, flags: u8) -> Self {
-        Self {
-            label: jmp,
-            flag: flags,
-        }
-    }
-    pub const INIT: Self = Self {
-        flag: CallFlags::None as u8,
-        label: AsmLabel::INIT,
-    };
-
-    pub fn is_flag_set(&self, f: CallFlags) -> bool {
-        (self.flag & f as u8) != 0
-    }
-
-    pub fn from_tail_jump(jmp: Jump) -> Self {
-        Self::new(jmp.label, CallFlags::Linkable as _)
-    }
-}
-
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
 #[repr(u8)]
 pub enum RelationalCondition {
@@ -92,7 +66,7 @@ pub struct Label {
     label: AsmLabel,
 }
 
-const SCRATCH_REG: RegisterID = RegisterID::R11;
+pub const SCRATCH_REG: RegisterID = RegisterID::R11;
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub struct Jump {
     label: AsmLabel,
@@ -1075,6 +1049,28 @@ impl MacroAssemblerX86 {
         self.asm.cmpl_ir(right, left);
         self.set32(unsafe { std::mem::transmute(cond) }, dest);
     }
+    pub fn compare64(
+        &mut self,
+        cond: RelationalCondition,
+        left: RegisterID,
+        right: RegisterID,
+        dest: RegisterID,
+    ) {
+        self.asm.cmpq_rr(right, left);
+        self.set32(unsafe { std::mem::transmute(cond) }, dest);
+    }
+
+    pub fn compare64_imm(
+        &mut self,
+        cond: RelationalCondition,
+        left: RegisterID,
+        right: i32,
+        dest: RegisterID,
+    ) {
+        if right == 0 {}
+        self.asm.cmpq_ir(right, left);
+        self.set32(unsafe { std::mem::transmute(cond) }, dest);
+    }
     pub fn test8(&mut self, cond: RelationalCondition, addr: Mem, mask: i32, dest: RegisterID) {
         let (base, off) = match addr {
             Mem::Base(base, off) => (base, off),
@@ -1098,6 +1094,41 @@ impl MacroAssemblerX86 {
         self.asm.testl_rr(reg, mask);
         self.set32(unsafe { std::mem::transmute(cond) }, dest);
     }
+
+    pub fn test64(
+        &mut self,
+        cond: RelationalCondition,
+        reg: RegisterID,
+        mask: RegisterID,
+        dest: RegisterID,
+    ) {
+        self.asm.testq_rr(reg, mask);
+        self.set32(unsafe { std::mem::transmute(cond) }, dest);
+    }
+
+    pub fn near_tail_call(&mut self) -> Call {
+        return Call::new(self.asm.jmp(), CallFlags::LinkableNearTail as _);
+    }
+
+    pub fn near_call(&mut self) -> Call {
+        return Call::new(self.asm.call_rel(), CallFlags::LinkableNear as _);
+    }
+
+    pub fn call_mem(&mut self, mem: Mem) {
+        match mem {
+            Mem::Base(base, offset) => {
+                self.asm.call_m(offset, base);
+            }
+            _ => {
+                if self.x64 {
+                    self.load64(mem, SCRATCH_REG);
+                } else {
+                    self.load32(mem, SCRATCH_REG);
+                }
+                self.asm.call_r(SCRATCH_REG);
+            }
+        }
+    }
     pub fn branch(&mut self, cond: RelationalCondition) -> Jump {
         Jump::new(self.asm.jcc(unsafe { std::mem::transmute(cond) }))
     }
@@ -1108,6 +1139,23 @@ impl MacroAssemblerX86 {
         right: RegisterID,
     ) -> Jump {
         self.asm.cmpl_rr(left, right);
+        self.branch(cond)
+    }
+    pub fn branch32_imm(&mut self, cond: RelationalCondition, imm: i32, right: RegisterID) -> Jump {
+        self.asm.cmpl_ir(imm, right);
+        self.branch(cond)
+    }
+    pub fn branch64(
+        &mut self,
+        cond: RelationalCondition,
+        left: RegisterID,
+        right: RegisterID,
+    ) -> Jump {
+        self.asm.cmpq_rr(left, right);
+        self.branch(cond)
+    }
+    pub fn branch64_imm(&mut self, cond: RelationalCondition, imm: i32, right: RegisterID) -> Jump {
+        self.asm.cmpq_ir(imm, right);
         self.branch(cond)
     }
     pub fn jump(&mut self) -> Jump {
@@ -1243,6 +1291,15 @@ impl MacroAssemblerX86 {
         }
     }
 
+    pub fn load64_addr(&mut self, addr: usize, dest: RegisterID) {
+        if dest == RegisterID::EAX {
+            self.asm.movq_meax(addr);
+        } else {
+            self.move_i64(addr as _, dest);
+            self.load64(Mem::Base(dest, 0), dest);
+        }
+    }
+
     pub fn store64(&mut self, src: RegisterID, dest: Mem) {
         match dest {
             Mem::Base(base, offset) => self.asm.movq_rm(src, offset, base),
@@ -1285,49 +1342,59 @@ impl MacroAssemblerX86 {
         self.move_i64(imm, SCRATCH_REG);
         self.asm.subq_rr(SCRATCH_REG, dest);
     }
+    pub fn call(&mut self) -> Call {
+        if self.x64 {
+            #[cfg(target_family = "windows")]
+            {
+                // JIT relies on the CallerFrame (frame pointer) being put on the stack,
+                // On Win64 we need to manually copy the frame pointer to the stack, since MSVC may not maintain a frame pointer on 64-bit.
+                // See http://msdn.microsoft.com/en-us/library/9z1stfyw.aspx where it's stated that rbp MAY be used as a frame pointer.
+                self.store64(RegisterID::EAX, Mem::Base(RegisterID::EBP, -16));
+                // On Windows we need to copy the arguments that don't fit in registers to the stack location where the callee expects to find them.
+                // We don't know the number of arguments at this point, so the arguments (5, 6, ...) should always be copied.
 
-    pub fn call64(&mut self) -> X86Call {
-        #[cfg(target_family = "windows")]
-        {
-            // JIT relies on the CallerFrame (frame pointer) being put on the stack,
-            // On Win64 we need to manually copy the frame pointer to the stack, since MSVC may not maintain a frame pointer on 64-bit.
-            // See http://msdn.microsoft.com/en-us/library/9z1stfyw.aspx where it's stated that rbp MAY be used as a frame pointer.
-            self.store64(RegisterID::EAX, Mem::Base(RegisterID::EBP, -16));
-            // On Windows we need to copy the arguments that don't fit in registers to the stack location where the callee expects to find them.
-            // We don't know the number of arguments at this point, so the arguments (5, 6, ...) should always be copied.
-
-            // Copy argument 5
-            self.load64(
-                Mem::Base(RegisterID::ESP, 4 * std::mem::size_of::<u64>() as i32),
-                SCRATCH_REG,
-            );
-            self.store64(
-                SCRATCH_REG,
-                Mem::Base(RegisterID::ESP, -4 * std::mem::size_of::<u64>() as i32),
-            );
-            // Copy argument 6
-            self.load64(
-                Mem::Base(RegisterID::ESP, 5 * std::mem::size_of::<u64>() as i32),
-                SCRATCH_REG,
-            );
-            self.store64(
-                SCRATCH_REG,
-                Mem::Base(RegisterID::ESP, -3 * std::mem::size_of::<u64>() as i32),
-            );
-            // We also need to allocate the shadow space on the stack for the 4 parameter registers.
-            // Also, we should allocate 16 bytes for the frame pointer, and return address (not populated).
-            // In addition, we need to allocate 16 bytes for two more parameters, since the call can have up to 6 parameters.
-            self.sub64_imm32(8 * std::mem::size_of::<i64>() as i32, RegisterID::ESP);
+                // Copy argument 5
+                self.load64(
+                    Mem::Base(RegisterID::ESP, 4 * std::mem::size_of::<u64>() as i32),
+                    SCRATCH_REG,
+                );
+                self.store64(
+                    SCRATCH_REG,
+                    Mem::Base(RegisterID::ESP, -4 * std::mem::size_of::<u64>() as i32),
+                );
+                // Copy argument 6
+                self.load64(
+                    Mem::Base(RegisterID::ESP, 5 * std::mem::size_of::<u64>() as i32),
+                    SCRATCH_REG,
+                );
+                self.store64(
+                    SCRATCH_REG,
+                    Mem::Base(RegisterID::ESP, -3 * std::mem::size_of::<u64>() as i32),
+                );
+                // We also need to allocate the shadow space on the stack for the 4 parameter registers.
+                // Also, we should allocate 16 bytes for the frame pointer, and return address (not populated).
+                // In addition, we need to allocate 16 bytes for two more parameters, since the call can have up to 6 parameters.
+                self.sub64_imm32(8 * std::mem::size_of::<i64>() as i32, RegisterID::ESP);
+            }
+            let _ = self.move_with_patch_ptr(0, SCRATCH_REG);
+            let result = Call::new(self.asm.call_r(SCRATCH_REG), CallFlags::Linkable as _);
+            #[cfg(target_family = "windows")]
+            {
+                self.add64_imm32(8 * 8, RegisterID::ESP, RegisterID::ESP);
+            }
+            return result;
+        } else {
+            return Call::new(self.asm.call_rel(), CallFlags::Linkable as _);
         }
-        let _ = self.move_with_patch_ptr(0, SCRATCH_REG);
-        let result = X86Call::new(self.asm.call_r(SCRATCH_REG), CallFlags::Linkable as _);
-        #[cfg(target_family = "windows")]
-        {
-            self.add64_imm32(8 * 8, RegisterID::ESP, RegisterID::ESP);
-        }
-        return result;
     }
-
+    pub fn far_jump(&mut self, addr: usize) {
+        if self.x64 {
+            self.move_i64(addr as _, SCRATCH_REG);
+            self.asm.jmp_m(0, SCRATCH_REG);
+        } else {
+            self.asm.jmp_maddr(addr);
+        }
+    }
     pub fn call_ptr(&mut self, ptr: *const u8) {
         if self.x64 {
             self.move_i64(ptr as _, SCRATCH_REG);
@@ -1370,21 +1437,236 @@ impl MacroAssemblerX86 {
             _ => unreachable!(),
         }
     }
-}
 
+    pub fn tail_recursive_call64(&mut self) -> Call {
+        let _ = self.move_with_patch_ptr(0, SCRATCH_REG);
+        let new_jump = Jump::new(self.asm.jmp_r(SCRATCH_REG));
+        return Call::from_tail_jump(new_jump.label);
+    }
+
+    pub fn make_tail_recurisive_call64(&mut self, old_jump: Jump) -> Call {
+        old_jump.link(self);
+        let _ = self.move_with_patch_ptr(0, SCRATCH_REG);
+        let new_jump = Jump::new(self.asm.jmp_r(SCRATCH_REG));
+        return Call::from_tail_jump(new_jump.label);
+    }
+
+    pub fn and64_rr(&mut self, src: RegisterID, dest: RegisterID) {
+        self.asm.andq_rr(src, dest);
+    }
+
+    pub fn and64_ir(&mut self, imm: i32, dest: RegisterID) {
+        self.asm.andq_ir(imm, dest);
+    }
+    pub fn and64(&mut self, op1: RegisterID, op2: RegisterID, dest: RegisterID) {
+        if op1 == op2 && op1 != dest && op2 != dest {
+            self.move_rr(op1, dest);
+        } else if op1 == dest {
+            self.and64_rr(op2, dest);
+        } else {
+            self.move_rr(op2, dest);
+            self.and64_rr(op1, dest);
+        }
+    }
+
+    pub fn lshift64_imm(&mut self, imm: i8, dest: RegisterID) {
+        self.asm.shlq_i8r(imm, dest);
+    }
+
+    pub fn lshift64(&mut self, src: RegisterID, dest: RegisterID) {
+        if src == RegisterID::ECX {
+            self.asm.shlq_clr(dest);
+        } else {
+            assert_ne!(src, dest);
+            self.swap_gp(src, RegisterID::ECX);
+            self.asm
+                .shlq_clr(if dest == RegisterID::ECX { src } else { dest });
+            self.swap_gp(src, RegisterID::ECX);
+        }
+    }
+    pub fn rshift64_imm(&mut self, imm: i8, dest: RegisterID) {
+        self.asm.sarq_i8r(imm, dest);
+    }
+
+    pub fn rshift64(&mut self, src: RegisterID, dest: RegisterID) {
+        if src == RegisterID::ECX {
+            self.asm.sarq_clr(dest);
+        } else {
+            assert_ne!(src, dest);
+            self.swap_gp(src, RegisterID::ECX);
+            self.asm
+                .sarq_clr(if dest == RegisterID::ECX { src } else { dest });
+            self.swap_gp(src, RegisterID::ECX);
+        }
+    }
+    pub fn urshift64_imm(&mut self, imm: i8, dest: RegisterID) {
+        self.asm.shrq_i8r(imm, dest);
+    }
+
+    pub fn urshift64(&mut self, src: RegisterID, dest: RegisterID) {
+        if src == RegisterID::ECX {
+            self.asm.sarq_clr(dest);
+        } else {
+            assert_ne!(src, dest);
+            self.swap_gp(src, RegisterID::ECX);
+            self.asm
+                .shrq_clr(if dest == RegisterID::ECX { src } else { dest });
+            self.swap_gp(src, RegisterID::ECX);
+        }
+    }
+
+    pub fn mul64_rr(&mut self, src: RegisterID, dest: RegisterID) {
+        self.asm.imulq_rr(src, dest);
+    }
+    pub fn mul64(&mut self, src1: RegisterID, src2: RegisterID, dest: RegisterID) {
+        if src2 == dest {
+            self.mul64_rr(src1, dest);
+            return;
+        }
+        self.move_rr(src1, dest);
+        self.mul64_rr(src2, dest);
+    }
+
+    pub fn x86_cvt_to_quad_word64(&mut self) {
+        self.asm.cqo();
+    }
+
+    pub fn x86div64(&mut self, dest: RegisterID) {
+        self.asm.idivq_r(dest);
+    }
+    pub fn x86udiv64(&mut self, denominator: RegisterID) {
+        self.asm.divq_r(denominator);
+    }
+    pub fn neg64(&mut self, src: RegisterID, dest: RegisterID) {
+        self.move_rr(src, dest);
+        self.asm.negq_r(dest);
+    }
+
+    pub fn or64_rr(&mut self, src: RegisterID, dest: RegisterID) {
+        self.asm.orq_rr(src, dest);
+    }
+
+    pub fn or64_i32r(&mut self, imm: i32, dest: RegisterID) {
+        self.asm.orq_ir(imm, dest);
+    }
+
+    pub fn or64_i64r(&mut self, imm: i64, dest: RegisterID) {
+        if imm <= i32::MAX as i64 && imm >= i32::MIN as i64 {
+            self.or64_i32r(imm as _, dest);
+            return;
+        }
+        self.move_i64(imm, SCRATCH_REG);
+        self.or64_rr(SCRATCH_REG, dest);
+    }
+
+    pub fn or64(&mut self, op1: RegisterID, op2: RegisterID, dest: RegisterID) {
+        if op1 == op2 {
+            self.move_rr(op1, dest);
+        } else if op1 == dest {
+            self.or64_rr(op2, dest);
+        } else {
+            self.move_rr(op2, dest);
+            self.or64_rr(op1, dest);
+        }
+    }
+
+    pub fn or64_imm32(&mut self, imm: i32, src: RegisterID, dest: RegisterID) {
+        self.move_rr(src, dest);
+        self.or64_i32r(imm, dest);
+    }
+    pub fn or64_imm64(&mut self, imm: i64, src: RegisterID, dest: RegisterID) {
+        self.move_rr(src, dest);
+        self.or64_i64r(imm, dest);
+    }
+
+    pub fn xor64_rr(&mut self, src: RegisterID, dest: RegisterID) {
+        self.asm.xorq_rr(src, dest);
+    }
+
+    pub fn xor64(&mut self, op1: RegisterID, op2: RegisterID, dest: RegisterID) {
+        if op1 == op2 {
+            self.move_i32(0, dest);
+        } else if op1 == dest {
+            self.xor64_rr(op2, dest);
+        } else {
+            self.move_rr(op2, dest);
+            self.xor64_rr(op1, dest);
+        }
+    }
+
+    pub fn xor64_imm32(&mut self, imm: i32, src_dest: RegisterID) {
+        self.asm.xorq_ir(imm, src_dest);
+    }
+
+    pub fn xor64_imm64(&mut self, imm: i64, src_dest: RegisterID) {
+        self.move_i64(imm, SCRATCH_REG);
+        self.asm.xorq_rr(SCRATCH_REG, src_dest);
+    }
+
+    pub fn not64(&mut self, src_dest: RegisterID) {
+        self.asm.notq_r(src_dest);
+    }
+
+    pub fn not64_mem(&mut self, src_dest: Mem) {
+        match src_dest {
+            Mem::Base(base, off) => {
+                self.asm.notq_m(off, base);
+            }
+            _ => unreachable!(),
+        }
+    }
+    pub fn cmov(&mut self, cond: Condition, src: RegisterID, dest: RegisterID) {
+        if self.x64 {
+            self.asm.cmovq_rr(cond, src, dest);
+        } else {
+            self.asm.cmovl_rr(cond, src, dest);
+        }
+    }
+
+    pub fn cmov32(&mut self, cond: Condition, src: RegisterID, dest: RegisterID) {
+        self.asm.cmovl_rr(cond, src, dest);
+    }
+
+    pub fn push(&mut self, src: RegisterID) {
+        self.asm.push_r(src);
+    }
+
+    pub fn pop(&mut self, dest: RegisterID) {
+        self.asm.pop_r(dest);
+    }
+
+    pub fn function_prologue(&mut self, size: i32) {
+        //self.move_rr(RegisterID::EBP, RegisterID::EAX);
+        self.asm.push_r(RegisterID::EBP);
+        self.move_rr(RegisterID::ESP, RegisterID::EBP);
+        if size != 0 {
+            if self.x64 {
+                self.sub64_imm32(size, RegisterID::ESP);
+            } else {
+                self.sub32_imm(size, RegisterID::ESP);
+            }
+        }
+    }
+
+    pub fn function_epilogue(&mut self) {
+        //self.move_rr(RegisterID::EBP, RegisterID::ESP);
+        self.asm.pop_r(RegisterID::EBP);
+    }
+}
 impl super::MacroAssemblerBase for MacroAssemblerX86 {
-    fn link_call(code: *mut u8, call_label: AsmLabel, func: *const u8, flags: u8) {
+    fn link_call(code: *mut u8, call: Call, func: *const u8, flags: u8) {
         if (flags & CallFlags::Near as u8) == 0 {
             X86Asm::link_pointer_or_call(
                 code,
-                call_label.label_at_offset(-(REPATCH_OFFSET_CALL_R11 as i32)),
+                call.label
+                    .label_at_offset(-(REPATCH_OFFSET_CALL_R11 as i32)),
                 func as *mut u8,
             );
             return;
         } else if (flags & CallFlags::Tail as u8) != 0 {
-            X86Asm::slink_jump(code, call_label, func as *mut u8);
+            X86Asm::slink_jump(code, call.label, func as *mut u8);
         } else {
-            X86Asm::slink_jump(code, call_label, func as *mut u8);
+            X86Asm::slink_jump(code, call.label, func as *mut u8);
         }
     }
     fn link_pointer(code: *mut u8, label: assembler_buffer::AsmLabel, value: *mut u8) {

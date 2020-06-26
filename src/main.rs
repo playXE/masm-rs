@@ -1,7 +1,7 @@
 use capstone::prelude::*;
 use masm::linkbuffer::*;
 use masm::x86_assembler::*;
-use masm::x86masm::MacroAssemblerX86;
+use masm::x86masm::*;
 use masm::MacroAssemblerBase;
 #[inline(never)]
 unsafe extern "C" fn foo() {
@@ -10,11 +10,27 @@ unsafe extern "C" fn foo() {
 
 fn main() {
     let mut masm = MacroAssemblerX86::new(true);
-    masm.asm.push_r(RegisterID::EBP);
-    masm.move_rr(RegisterID::ESP, RegisterID::EBP);
-    let c = masm.call64();
-    masm.move_rr(RegisterID::EBP, RegisterID::ESP);
-    masm.asm.pop_r(RegisterID::EBP);
+    masm.function_prologue(0);
+    masm.push(RegisterID::EBX);
+    masm.move_rr(RegisterID::EDI, RegisterID::EBX);
+    masm.move_i32(2, RegisterID::EDI);
+    let br = masm.branch32(
+        RelationalCondition::LessThan,
+        RegisterID::EDI,
+        RegisterID::EBX,
+    );
+    masm.move_i32(1, RegisterID::EAX);
+    masm.move_rr(RegisterID::EBX, RegisterID::EDI);
+    masm.sub32(RegisterID::EDI, RegisterID::EAX, RegisterID::EDI);
+    let call = masm.call();
+    masm.mul32_rr(RegisterID::EBX, RegisterID::EAX);
+    let epilog_jump = masm.jump();
+
+    br.link(&mut masm);
+    masm.move_i32(1, RegisterID::EAX);
+    epilog_jump.link(&mut masm);
+    masm.pop(RegisterID::EBX);
+    masm.function_epilogue();
     masm.ret();
     let code = masm.finalize();
     let cs = Capstone::new()
@@ -33,7 +49,7 @@ fn main() {
     unsafe {
         std::ptr::copy_nonoverlapping(code.as_ptr(), ptr, code.len());
         let buffer = LinkBuffer::<MacroAssemblerX86>::new(ptr);
-        buffer.link_call(c.label, foo as *const u8);
+        buffer.link_call(call, ptr);
         memory.set_readable_and_executable();
         let cs = Capstone::new()
             .x86()
@@ -46,7 +62,7 @@ fn main() {
         for i in insns.unwrap().iter() {
             println!("{}", i);
         }
-        let f: fn() = std::mem::transmute(ptr);
-        f();
+        let f: fn(i32) -> i32 = std::mem::transmute(ptr);
+        println!("{}", f(5));
     }
 }
