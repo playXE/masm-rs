@@ -137,3 +137,52 @@ impl FPSingleRegID {
         self as u8 >> 1
     }
 }
+pub struct ARMThumbImmedate {}
+
+union ThumbImmediateValue {
+    as_int: i16,
+    a: A,
+    b: B,
+    c: C,
+}
+
+bitfield::bitfield! {
+    struct A(u16);
+    imm8,set_imm8: 7,0;
+    imm3,set_imm3: 10,7;
+    i,set_i: 11,10;
+    imm4,set_i4: 15,11;
+}
+
+bitfield::bitfield! {
+    struct B(u16);
+    shift_value7,set_shift_value7: 7,0;
+    shift_amount,set_shift_amount: 12,7;
+}
+
+bitfield::bitfield! {
+    struct C(u16);
+    immediate,set_imm: 8,0;
+    pattern,set_pattern: 12,8;
+}
+
+impl Clone for A {
+    fn clone(&self) -> Self {
+        Self(self.0)
+    }
+}
+impl Clone for B {
+    fn clone(&self) -> Self {
+        Self(self.0)
+    }
+}
+
+impl Clone for C {
+    fn clone(&self) -> Self {
+        Self(self.0)
+    }
+}
+
+impl Copy for A {}
+impl Copy for C {}
+impl Copy for B {}

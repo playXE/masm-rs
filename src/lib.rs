@@ -1,6 +1,7 @@
 #![allow(non_upper_case_globals)]
 #![allow(non_snake_case)]
 #![allow(non_camel_case_types)]
+pub mod air;
 pub mod arvm7_assembler;
 pub mod asm_constant_pool;
 pub mod assembler_buffer;
@@ -51,4 +52,11 @@ impl Call {
     pub fn from_tail_jump(jmp: AsmLabel) -> Self {
         Self::new(jmp, CallFlags::Linkable as _)
     }
+}
+
+pub mod machine_masm {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    pub use super::x86_assembler::*;
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    pub use super::x86masm::*;
 }
