@@ -1105,7 +1105,17 @@ impl MacroAssemblerX86 {
         self.asm.testq_rr(reg, mask);
         self.set32(unsafe { std::mem::transmute(cond) }, dest);
     }
-
+    pub fn trap_safepoint(&mut self, page_addr: usize) {
+        if self.x64 {
+            self.move_i64(page_addr as _, SCRATCH_REG);
+            self.asm.movl_i32m(0, 0, SCRATCH_REG);
+        } else {
+            self.push(RegisterID::EAX);
+            self.move_i32(page_addr as _, RegisterID::EAX);
+            self.asm.movl_i32m(0, 0, SCRATCH_REG);
+            self.pop(RegisterID::EAX);
+        }
+    }
     pub fn near_tail_call(&mut self) -> Call {
         return Call::new(self.asm.jmp(), CallFlags::LinkableNearTail as _);
     }
