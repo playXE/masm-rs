@@ -1391,6 +1391,10 @@ impl MacroAssemblerX86 {
             return Call::new(self.asm.call_rel(), CallFlags::Linkable as _);
         }
     }
+    pub fn far_jump_r(&mut self, target: RegisterID) {
+        self.asm.jmp_r(target);
+    }
+
     pub fn far_jump(&mut self, addr: usize) {
         if self.x64 {
             self.move_i64(addr as _, SCRATCH_REG);
