@@ -1161,7 +1161,11 @@ impl MacroAssemblerX86 {
     pub fn jump(&mut self) -> Jump {
         Jump::new(self.asm.jmp())
     }
-
+    pub fn label(&mut self) -> Label {
+        Label {
+            label: self.asm.label(),
+        }
+    }
     pub fn set32(&mut self, cond: Condition, dest: RegisterID) {
         if !self.x64 {
             self.asm.xchgl_rr(dest, RegisterID::EAX);
