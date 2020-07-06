@@ -463,6 +463,14 @@ impl MacroAssemblerX86 {
         }
         self.asm.movl_rr(src, dest);
     }
+
+    pub fn move_fp_to_gp(&mut self, src: XMMRegisterID, dest: RegisterID) {
+        self.asm.movq_f2i_rr(src, dest);
+    }
+
+    pub fn move_gp_to_fp(&mut self, src: RegisterID, dest: XMMRegisterID) {
+        self.asm.movq_i2f_rr(src, dest);
+    }
     pub fn move_rr(&mut self, src: RegisterID, dst: RegisterID) {
         if src != dst {
             if self.x64 {
@@ -1155,6 +1163,82 @@ impl MacroAssemblerX86 {
         self.asm.cmpl_ir(imm, right);
         self.branch(cond)
     }
+
+    pub fn branch_add32_rr(
+        &mut self,
+        cond: ResultCondition,
+        src: RegisterID,
+        dest: RegisterID,
+    ) -> Jump {
+        self.add32_rr(src, dest);
+        Jump::new(self.asm.jcc(unsafe { std::mem::transmute(cond) }))
+    }
+    pub fn branch_add32(
+        &mut self,
+        cond: ResultCondition,
+        src: RegisterID,
+        src2: RegisterID,
+        dest: RegisterID,
+    ) -> Jump {
+        if src == dest {
+            return self.branch_add32_rr(cond, src2, dest);
+        } else {
+            self.move32_if_needed(src2, dest);
+            self.branch_add32_rr(cond, src, dest)
+        }
+    }
+    pub fn branch_add32_imm(&mut self, cond: ResultCondition, imm: i32, dest: RegisterID) -> Jump {
+        self.add32_imm(imm, dest);
+        Jump::new(self.asm.jcc(unsafe { std::mem::transmute(cond) }))
+    }
+    pub fn branch_sub32(
+        &mut self,
+        cond: RelationalCondition,
+        src: RegisterID,
+        dest: RegisterID,
+    ) -> Jump {
+        self.sub32_rr(src, dest);
+        Jump::new(self.asm.jcc(unsafe { std::mem::transmute(cond) }))
+    }
+
+    pub fn branch_sub32_imm(
+        &mut self,
+        cond: RelationalCondition,
+        imm: i32,
+        dest: RegisterID,
+    ) -> Jump {
+        self.sub32_imm(imm, dest);
+        Jump::new(self.asm.jcc(unsafe { std::mem::transmute(cond) }))
+    }
+    pub fn branch64_test(
+        &mut self,
+        cond: ResultCondition,
+        reg: RegisterID,
+        mask: RegisterID,
+    ) -> Jump {
+        self.asm.testq_rr(reg, mask);
+        Jump::new(self.asm.jcc(unsafe { std::mem::transmute(cond) }))
+    }
+
+    pub fn branch64_test_imm64(
+        &mut self,
+        cond: ResultCondition,
+        reg: RegisterID,
+        mask: i64,
+    ) -> Jump {
+        self.move_i64(mask, SCRATCH_REG);
+        self.branch64_test(cond, reg, SCRATCH_REG)
+    }
+
+    pub fn branch64_test_imm32(
+        &mut self,
+        cond: ResultCondition,
+        reg: RegisterID,
+        mask: i32,
+    ) -> Jump {
+        self.asm.testq_i32r(mask, reg);
+        Jump::new(self.asm.jcc(unsafe { std::mem::transmute(cond) }))
+    }
     pub fn branch64(
         &mut self,
         cond: RelationalCondition,
@@ -1164,9 +1248,28 @@ impl MacroAssemblerX86 {
         self.asm.cmpq_rr(left, right);
         self.branch(cond)
     }
-    pub fn branch64_imm(&mut self, cond: RelationalCondition, imm: i32, right: RegisterID) -> Jump {
+    pub fn branch64_imm32(
+        &mut self,
+        cond: RelationalCondition,
+        imm: i32,
+        right: RegisterID,
+    ) -> Jump {
         self.asm.cmpq_ir(imm, right);
         self.branch(cond)
+    }
+    pub fn branch64_imm64(
+        &mut self,
+        cond: RelationalCondition,
+        left: RegisterID,
+        right: i64,
+    ) -> Jump {
+        if cond == RelationalCondition::Equal || cond == RelationalCondition::NotEqual && right == 0
+        {
+            self.asm.testq_rr(left, left);
+            return Jump::new(self.asm.jcc(unsafe { std::mem::transmute(cond) }));
+        }
+        self.move_i64(right, SCRATCH_REG);
+        self.branch64(cond, left, SCRATCH_REG)
     }
     pub fn jump(&mut self) -> Jump {
         Jump::new(self.asm.jmp())
@@ -1356,7 +1459,7 @@ impl MacroAssemblerX86 {
         self.move_i64(imm, SCRATCH_REG);
         self.asm.subq_rr(SCRATCH_REG, dest);
     }
-    pub fn call(&mut self) -> Call {
+    pub fn call_6args(&mut self) -> Call {
         if self.x64 {
             #[cfg(target_family = "windows")]
             {
@@ -1670,6 +1773,128 @@ impl MacroAssemblerX86 {
         //self.move_rr(RegisterID::EBP, RegisterID::ESP);
         self.asm.pop_r(RegisterID::EBP);
     }
+    pub fn register_for_arg(&mut self, arg: usize) -> RegisterID {
+        #[cfg(windows)]
+        {
+            match arg {
+                0 => RegisterID::ECX,
+                1 => RegisterID::EDX,
+                2 => RegisterID::R8,
+                3 => RegisterID::R9,
+                _ => unreachable!(),
+            }
+        }
+        #[cfg(unix)]
+        {
+            match arg {
+                0 => RegisterID::RDI,
+                1 => RegisterID::ESI,
+                2 => RegisterID::EDX,
+                3 => RegisterID::RCX,
+                4 => RegisterID::R8,
+                5 => RegisterID::R9,
+            }
+        }
+    }
+
+    pub fn arg_stack_addr(&self, arg: usize) -> Mem {
+        let offset = arg as i32 - ARG_IN_REG_COUNT as i32;
+        return Mem::Base(RegisterID::ESP, offset * (if self.x64 { 8 } else { 4 }));
+    }
+    pub fn prepare_call_with_arg_count(&mut self, argc: usize) {
+        //self.push(RegisterID::EAX);
+        self.push(RegisterID::ECX);
+        //self.push(RegisterID::EDX);
+        self.push(RegisterID::R8);
+        self.push(RegisterID::R9);
+        self.push(RegisterID::R10);
+        self.push(RegisterID::R11);
+        let mut argc_on_stack = 0;
+        if argc > ARG_IN_REG_COUNT {
+            argc_on_stack = argc - ARG_IN_REG_COUNT * (if self.x64 { 8 } else { 4 });
+            argc_on_stack = argc_on_stack + 4 * (if self.x64 { 8 } else { 4 });
+            //return address
+        }
+        argc_on_stack += 40;
+        if !self.x64 {
+            self.sub32_imm(argc_on_stack as _, RegisterID::ESP);
+        } else {
+            self.sub64_imm32(argc_on_stack as _, RegisterID::ESP);
+        }
+    }
+    pub fn call(&mut self, argc: usize) -> Call {
+        let call = if self.x64 {
+            let _ = self.move_with_patch_ptr(0, SCRATCH_REG);
+            let result = Call::new(self.asm.call_r(SCRATCH_REG), CallFlags::Linkable as _);
+            if argc > ARG_IN_REG_COUNT {
+                let argc_on_stack = argc - ARG_IN_REG_COUNT * (if self.x64 { 8 } else { 4 });
+                let argc_on_stack = argc_on_stack + 4 * (if self.x64 { 8 } else { 4 }); //return address
+                let argc_on_stack = argc_on_stack + 40;
+                if !self.x64 {
+                    self.add32_imm(argc_on_stack as _, RegisterID::ESP);
+                } else {
+                    self.add64_imm32(argc_on_stack as _, RegisterID::ESP, RegisterID::ESP);
+                }
+            }
+            #[cfg(windows)]
+            {
+                self.add64_imm32(40, RegisterID::ESP, RegisterID::ESP);
+            }
+            result
+        } else {
+            let argc_on_stack = argc - ARG_IN_REG_COUNT * (if self.x64 { 8 } else { 4 });
+            let argc_on_stack = argc_on_stack + 4 * (if self.x64 { 8 } else { 4 }); //return address
+            let c = Call::new(self.asm.call_rel(), CallFlags::Linkable as _);
+            self.add32_imm(argc_on_stack as i32 + 40, RegisterID::ESP);
+            c
+        };
+        self.pop(RegisterID::R11);
+        self.pop(RegisterID::R10);
+        self.pop(RegisterID::R9);
+        self.pop(RegisterID::R8);
+        //self.pop(RegisterID::EDX);
+        self.pop(RegisterID::ECX);
+        //self.pop(RegisterID::EAX);
+        call
+    }
+    pub fn pass_int32_as_arg(&mut self, value: i32, arg: usize) {
+        if arg < ARG_IN_REG_COUNT {
+            let r = self.register_for_arg(arg);
+            self.move_i32(value, r);
+        } else {
+            self.store32_imm(value, self.arg_stack_addr(arg));
+        }
+    }
+    pub fn pass_ptr_as_arg(&mut self, value: usize, arg: usize) {
+        if arg < ARG_IN_REG_COUNT {
+            let r = self.register_for_arg(arg);
+            if !self.x64 {
+                self.move_i32(value as _, r);
+            } else {
+                self.move_i64(value as _, r);
+            }
+        } else {
+            if !self.x64 {
+                self.store32_imm(value as _, self.arg_stack_addr(arg));
+            } else {
+                self.store64_imm64(value as _, self.arg_stack_addr(arg));
+            }
+        }
+    }
+
+    pub fn pass_reg_as_arg(&mut self, src: RegisterID, arg: usize) {
+        if arg < ARG_IN_REG_COUNT {
+            let r = self.register_for_arg(arg);
+            self.move_rr(src, r);
+        } else {
+            if self.x64 {
+                self.store64(src, self.arg_stack_addr(arg));
+            } else {
+                self.store32(src, self.arg_stack_addr(arg));
+            }
+            //self.store32_imm(value, self.arg_stack_addr(arg));
+        }
+    }
 }
 impl super::MacroAssemblerBase for MacroAssemblerX86 {
     fn link_call(code: *mut u8, call: Call, func: *const u8, flags: u8) {
@@ -1700,3 +1925,8 @@ pub enum CallConv {
     SystemV,
     Windows64,
 }
+
+#[cfg(windows)]
+pub const ARG_IN_REG_COUNT: usize = 4;
+#[cfg(unix)]
+pub const ARG_IN_REG_COUNT: usize = 6;
