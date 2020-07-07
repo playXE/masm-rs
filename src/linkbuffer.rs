@@ -1,5 +1,6 @@
 use crate::*;
 use assembler_buffer::*;
+
 use std::marker::PhantomData;
 pub struct LinkBuffer<T: MacroAssemblerBase> {
     code: *mut u8,
@@ -13,7 +14,9 @@ impl<T: MacroAssemblerBase> LinkBuffer<T> {
             _m: PhantomData::default(),
         }
     }
-
+    pub fn link_data(&self, at: AsmLabel, value: *mut u8) {
+        T::link_pointer(self.code, at, value);
+    }
     pub fn link_call(&self, at: Call, with: *const u8) {
         T::link_call(self.code, at, with as *mut _, 0);
     }
@@ -189,7 +192,21 @@ impl Memory {
         self.position = size;
         Ok(self.current.ptr)
     }
+    pub fn set_readable_and_executable_ptr(&mut self, code: *mut u8, size: usize) {
+        #[cfg(feature = "selinux-fix")]
+        {
+            unsafe {
+                region::protect(code, size, region::Protection::READ_EXECUTE).unwrap();
+            }
+        }
 
+        #[cfg(not(feature = "selinux-fix"))]
+        {
+            unsafe {
+                region::protect(code, size, region::Protection::READ_EXECUTE).unwrap();
+            }
+        }
+    }
     /// Set all memory allocated in this `Memory` up to now as readable and executable.
     pub fn set_readable_and_executable(&mut self) {
         self.finish_current();

@@ -15,6 +15,10 @@ impl DataLabelPtr {
         }
     }
 
+    pub fn asm_label(&self) -> AsmLabel {
+        self.label
+    }
+
     pub fn is_set(&self) -> bool {
         self.label.is_set()
     }
@@ -64,6 +68,12 @@ pub enum FpCondition {
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub struct Label {
     label: AsmLabel,
+}
+
+impl Label {
+    pub fn asm_label(&self) -> AsmLabel {
+        self.label
+    }
 }
 
 pub const SCRATCH_REG: RegisterID = RegisterID::R11;
@@ -1176,15 +1186,15 @@ impl MacroAssemblerX86 {
     pub fn branch_add32(
         &mut self,
         cond: ResultCondition,
-        src: RegisterID,
+        src1: RegisterID,
         src2: RegisterID,
         dest: RegisterID,
     ) -> Jump {
-        if src == dest {
+        if src1 == dest {
             return self.branch_add32_rr(cond, src2, dest);
         } else {
             self.move32_if_needed(src2, dest);
-            self.branch_add32_rr(cond, src, dest)
+            self.branch_add32_rr(cond, src1, dest)
         }
     }
     pub fn branch_add32_imm(&mut self, cond: ResultCondition, imm: i32, dest: RegisterID) -> Jump {
@@ -1787,12 +1797,13 @@ impl MacroAssemblerX86 {
         #[cfg(unix)]
         {
             match arg {
-                0 => RegisterID::RDI,
+                0 => RegisterID::EDI,
                 1 => RegisterID::ESI,
                 2 => RegisterID::EDX,
-                3 => RegisterID::RCX,
+                3 => RegisterID::ECX,
                 4 => RegisterID::R8,
                 5 => RegisterID::R9,
+                _ => unreachable!(),
             }
         }
     }
@@ -1803,23 +1814,31 @@ impl MacroAssemblerX86 {
     }
     pub fn prepare_call_with_arg_count(&mut self, argc: usize) {
         //self.push(RegisterID::EAX);
-        self.push(RegisterID::ECX);
-        //self.push(RegisterID::EDX);
-        self.push(RegisterID::R8);
-        self.push(RegisterID::R9);
-        self.push(RegisterID::R10);
-        self.push(RegisterID::R11);
+        #[cfg(windows)]
+        {
+            self.push(RegisterID::ECX);
+            //self.push(RegisterID::EDX);
+            self.push(RegisterID::R8);
+            self.push(RegisterID::R9);
+            self.push(RegisterID::R10);
+            self.push(RegisterID::R11);
+        }
         let mut argc_on_stack = 0;
         if argc > ARG_IN_REG_COUNT {
             argc_on_stack = argc - ARG_IN_REG_COUNT * (if self.x64 { 8 } else { 4 });
             argc_on_stack = argc_on_stack + 4 * (if self.x64 { 8 } else { 4 });
             //return address
         }
-        argc_on_stack += 40;
-        if !self.x64 {
-            self.sub32_imm(argc_on_stack as _, RegisterID::ESP);
-        } else {
-            self.sub64_imm32(argc_on_stack as _, RegisterID::ESP);
+        #[cfg(windows)]
+        {
+            argc_on_stack += 40;
+        }
+        if argc_on_stack != 0 {
+            if !self.x64 {
+                self.sub32_imm(argc_on_stack as _, RegisterID::ESP);
+            } else {
+                self.sub64_imm32(argc_on_stack as _, RegisterID::ESP);
+            }
         }
     }
     pub fn call(&mut self, argc: usize) -> Call {
@@ -1829,7 +1848,6 @@ impl MacroAssemblerX86 {
             if argc > ARG_IN_REG_COUNT {
                 let argc_on_stack = argc - ARG_IN_REG_COUNT * (if self.x64 { 8 } else { 4 });
                 let argc_on_stack = argc_on_stack + 4 * (if self.x64 { 8 } else { 4 }); //return address
-                let argc_on_stack = argc_on_stack + 40;
                 if !self.x64 {
                     self.add32_imm(argc_on_stack as _, RegisterID::ESP);
                 } else {
@@ -1848,12 +1866,15 @@ impl MacroAssemblerX86 {
             self.add32_imm(argc_on_stack as i32 + 40, RegisterID::ESP);
             c
         };
-        self.pop(RegisterID::R11);
-        self.pop(RegisterID::R10);
-        self.pop(RegisterID::R9);
-        self.pop(RegisterID::R8);
-        //self.pop(RegisterID::EDX);
-        self.pop(RegisterID::ECX);
+        #[cfg(windows)]
+        {
+            self.pop(RegisterID::R11);
+            self.pop(RegisterID::R10);
+            self.pop(RegisterID::R9);
+            self.pop(RegisterID::R8);
+            //self.pop(RegisterID::EDX);
+            self.pop(RegisterID::ECX);
+        }
         //self.pop(RegisterID::EAX);
         call
     }

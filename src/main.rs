@@ -22,7 +22,7 @@ fn main() {
     masm.move_i32(1, RegisterID::EAX);
     masm.move_rr(RegisterID::EBX, RegisterID::EDI);
     masm.sub32(RegisterID::EDI, RegisterID::EAX, RegisterID::EDI);
-    let call = masm.call();
+    let call = masm.call_6args();
     masm.mul32_rr(RegisterID::EBX, RegisterID::EAX);
     let epilog_jump = masm.jump();
 
