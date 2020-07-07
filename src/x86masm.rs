@@ -1780,7 +1780,7 @@ impl MacroAssemblerX86 {
     }
 
     pub fn function_epilogue(&mut self) {
-        //self.move_rr(RegisterID::EBP, RegisterID::ESP);
+        self.move_rr(RegisterID::EBP, RegisterID::ESP);
         self.asm.pop_r(RegisterID::EBP);
     }
     pub fn register_for_arg(&mut self, arg: usize) -> RegisterID {
@@ -1840,6 +1840,44 @@ impl MacroAssemblerX86 {
                 self.sub64_imm32(argc_on_stack as _, RegisterID::ESP);
             }
         }
+    }
+
+    pub fn call_r(&mut self, r: RegisterID) {
+        self.asm.call_r(r);
+    }
+
+    pub fn call_reg(&mut self, r: RegisterID, argc: usize) {
+        let call = if self.x64 {
+            self.asm.call_r(r);
+            if argc > ARG_IN_REG_COUNT {
+                let argc_on_stack = argc - ARG_IN_REG_COUNT * (if self.x64 { 8 } else { 4 });
+                let argc_on_stack = argc_on_stack + 4 * (if self.x64 { 8 } else { 4 }); //return address
+                if !self.x64 {
+                    self.add32_imm(argc_on_stack as _, RegisterID::ESP);
+                } else {
+                    self.add64_imm32(argc_on_stack as _, RegisterID::ESP, RegisterID::ESP);
+                }
+            }
+            #[cfg(windows)]
+            {
+                self.add64_imm32(40, RegisterID::ESP, RegisterID::ESP);
+            }
+        } else {
+            let argc_on_stack = argc - ARG_IN_REG_COUNT * (if self.x64 { 8 } else { 4 });
+            let argc_on_stack = argc_on_stack + 4 * (if self.x64 { 8 } else { 4 }); //return address
+            self.asm.call_r(r);
+            self.add32_imm(argc_on_stack as i32 + 40, RegisterID::ESP);
+        };
+        #[cfg(windows)]
+        {
+            self.pop(RegisterID::R11);
+            self.pop(RegisterID::R10);
+            self.pop(RegisterID::R9);
+            self.pop(RegisterID::R8);
+            //self.pop(RegisterID::EDX);
+            self.pop(RegisterID::ECX);
+        }
+        //self.pop(RegisterID::EAX);
     }
     pub fn call(&mut self, argc: usize) -> Call {
         let call = if self.x64 {
