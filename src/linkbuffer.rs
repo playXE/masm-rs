@@ -7,6 +7,7 @@ pub struct LinkBuffer<T: MacroAssemblerBase> {
     pub size: usize,
     pub did_allocate: bool,
     pub exec_mem: *mut u8,
+    pub link_tasks: Vec<Box<dyn FnOnce(&mut LinkBuffer<T>)>>,
     _m: PhantomData<T>,
 }
 
@@ -18,6 +19,13 @@ impl<T: MacroAssemblerBase> LinkBuffer<T> {
             did_allocate: false,
             exec_mem: std::ptr::null_mut(),
             _m: PhantomData::default(),
+            link_tasks: vec![],
+        }
+    }
+
+    pub fn perform_finalization(&mut self) {
+        while let Some(task) = self.link_tasks.pop() {
+            task(self);
         }
     }
 

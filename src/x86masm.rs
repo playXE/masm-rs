@@ -174,6 +174,7 @@ impl JumpList {
 
 pub struct MacroAssemblerX86 {
     pub asm: X86Asm,
+    pub link_tasks: Vec<Box<dyn FnOnce(&mut LinkBuffer<Self>)>>,
     x64: bool,
 }
 
@@ -181,10 +182,13 @@ impl MacroAssemblerX86 {
     pub fn new(x64: bool) -> Self {
         Self {
             x64,
+            link_tasks: vec![],
             asm: X86Asm::new(x64),
         }
     }
-
+    pub fn add_link_task(&mut self, task: Box<dyn FnOnce(&mut LinkBuffer<Self>)>) {
+        self.link_tasks.push(task);
+    }
     pub fn pad_before_patch(&mut self) {
         self.asm.label();
     }
@@ -1538,7 +1542,10 @@ impl MacroAssemblerX86 {
         }
         self.asm.call_r(SCRATCH_REG);
     }
-
+    pub fn call_ptr_repatch(&mut self, initial: *const u8) -> Call {
+        let _lbl = self.move_with_patch_ptr(initial as _, SCRATCH_REG);
+        Call::new(self.asm.call_r(SCRATCH_REG), CallFlags::Linkable as _)
+    }
     pub fn add64(&mut self, a: RegisterID, b: RegisterID, dest: RegisterID) {
         self.x86_lea64(Mem::Index(a, b, 0, 0), dest);
     }
@@ -1849,7 +1856,45 @@ impl MacroAssemblerX86 {
     pub fn call_r(&mut self, r: RegisterID) {
         self.asm.call_r(r);
     }
-
+    pub fn call_ptr_argc(&mut self, ptr: *const u8, argc: usize) {
+        if self.x64 {
+            self.move_i64(ptr as _, SCRATCH_REG);
+        } else {
+            self.move_i32(ptr as _, SCRATCH_REG);
+        }
+        self.asm.call_r(SCRATCH_REG);
+        if argc > ARG_IN_REG_COUNT {
+            let argc_on_stack = argc - ARG_IN_REG_COUNT * (if self.x64 { 8 } else { 4 });
+            let argc_on_stack = argc_on_stack + 4 * (if self.x64 { 8 } else { 4 }); //return address
+            if !self.x64 {
+                self.add32_imm(argc_on_stack as _, RegisterID::ESP);
+            } else {
+                self.add64_imm32(argc_on_stack as _, RegisterID::ESP, RegisterID::ESP);
+            }
+        }
+        #[cfg(windows)]
+        {
+            self.add64_imm32(40, RegisterID::ESP, RegisterID::ESP);
+        }
+    }
+    pub fn call_ptr_repatch_argc(&mut self, initial: *const u8, argc: usize) -> Call {
+        let _lbl = self.move_with_patch_ptr(initial as _, SCRATCH_REG);
+        let c = Call::new(self.asm.call_r(SCRATCH_REG), CallFlags::Linkable as _);
+        if argc > ARG_IN_REG_COUNT {
+            let argc_on_stack = argc - ARG_IN_REG_COUNT * (if self.x64 { 8 } else { 4 });
+            let argc_on_stack = argc_on_stack + 4 * (if self.x64 { 8 } else { 4 }); //return address
+            if !self.x64 {
+                self.add32_imm(argc_on_stack as _, RegisterID::ESP);
+            } else {
+                self.add64_imm32(argc_on_stack as _, RegisterID::ESP, RegisterID::ESP);
+            }
+        }
+        #[cfg(windows)]
+        {
+            self.add64_imm32(40, RegisterID::ESP, RegisterID::ESP);
+        }
+        c
+    }
     pub fn call_reg(&mut self, r: RegisterID, argc: usize) {
         let _ = if self.x64 {
             self.asm.call_r(r);
@@ -2051,5 +2096,6 @@ impl LinkBuffer<MacroAssemblerX86> {
         unsafe {
             std::ptr::copy_nonoverlapping(buffer, self.code, masm.asm.data().len());
         }
+        std::mem::swap(&mut self.link_tasks, &mut masm.link_tasks);
     }
 }
