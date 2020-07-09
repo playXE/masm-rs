@@ -2347,7 +2347,12 @@ impl X86Asm {
     pub fn link_pointer_or_call(code: *mut u8, label: AsmLabel, value: *mut u8) {
         Self::set_pointer((code as usize + label.offset() as usize) as *mut u8, value);
     }
-
+    pub fn slink_jump2(code: *mut u8, from: AsmLabel, to: AsmLabel) {
+        Self::set_rel32(
+            (code as usize + from.offset() as usize) as *mut u8,
+            (code as usize + to.offset() as usize) as *mut u8,
+        );
+    }
     pub fn slink_jump(code: *mut u8, from: AsmLabel, to: *mut u8) {
         Self::set_rel32((code as usize + from.offset() as usize) as *mut u8, to);
     }

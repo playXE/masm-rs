@@ -1,4 +1,4 @@
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash, Default)]
 pub struct AsmLabel(pub u32);
 
 impl AsmLabel {

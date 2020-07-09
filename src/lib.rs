@@ -25,9 +25,17 @@ pub enum CallFlags {
 pub trait MacroAssemblerBase {
     fn link_call(code: *mut u8, call: Call, func: *const u8, flags: u8);
     fn link_pointer(code: *mut u8, label: assembler_buffer::AsmLabel, value: *mut u8);
+    fn link_jump(
+        code: *mut u8,
+        jump: assembler_buffer::AsmLabel,
+        label: assembler_buffer::AsmLabel,
+    );
+    fn link_jump_ptr(code: *mut u8, jump: AsmLabel, to: *const u8);
+    fn get_linker_addr(code: *mut u8, label: AsmLabel) -> *mut u8;
     fn finalize(self) -> Vec<u8>;
 }
 
+#[derive(Default)]
 pub struct Call {
     pub label: AsmLabel,
     pub flag: u8,
@@ -59,4 +67,13 @@ pub mod machine_masm {
     pub use super::x86_assembler::*;
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     pub use super::x86masm::*;
+}
+use std::sync::Mutex;
+lazy_static::lazy_static! {
+    pub(crate) static ref MEM_ALLOC: Mutex<linkbuffer::Memory> =
+        Mutex::new(linkbuffer::Memory::new());
+}
+
+pub fn set_memory_rwx() {
+    MEM_ALLOC.lock().unwrap().set_rwx();
 }

@@ -2,7 +2,6 @@
 //! Simple IR for doing codegeneration easy.
 
 use crate::machine_masm::*;
-use std::collections::HashMap;
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub enum AIRType {

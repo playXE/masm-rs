@@ -1,4 +1,3 @@
-use crate::assembler_buffer::*;
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
 #[repr(u8)]
 pub enum RegisterID {
@@ -139,15 +138,15 @@ impl FPSingleRegID {
 }
 pub struct ARMThumbImmedate {}
 
-union ThumbImmediateValue {
-    as_int: i16,
-    a: A,
-    b: B,
-    c: C,
+pub union ThumbImmediateValue {
+    pub as_int: i16,
+    pub a: A,
+    pub b: B,
+    pub c: C,
 }
 
 bitfield::bitfield! {
-    struct A(u16);
+    pub struct A(u16);
     imm8,set_imm8: 7,0;
     imm3,set_imm3: 10,7;
     i,set_i: 11,10;
@@ -155,13 +154,13 @@ bitfield::bitfield! {
 }
 
 bitfield::bitfield! {
-    struct B(u16);
+    pub struct B(u16);
     shift_value7,set_shift_value7: 7,0;
     shift_amount,set_shift_amount: 12,7;
 }
 
 bitfield::bitfield! {
-    struct C(u16);
+    pub struct C(u16);
     immediate,set_imm: 8,0;
     pattern,set_pattern: 12,8;
 }

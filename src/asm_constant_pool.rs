@@ -2,12 +2,12 @@ use crate::assembler_buffer::*;
 use crate::utils::SegmentedVec;
 
 pub struct AsmBufferWithConstPool {
-    pool: *mut u32,
-    mask: *mut u8,
-    load_offsets: SegmentedVec<u32>,
-    num_consts: usize,
-    max_dist: usize,
-    last_const_delta: usize,
+    pub pool: *mut u32,
+    pub mask: *mut u8,
+    pub load_offsets: SegmentedVec<u32>,
+    pub num_consts: usize,
+    pub max_dist: usize,
+    pub last_const_delta: usize,
     buf: AsmBuffer,
 }
 

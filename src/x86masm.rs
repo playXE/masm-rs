@@ -65,7 +65,7 @@ pub enum FpCondition {
     LessThanOrEqualOrUnordered = Condition::BE as u8,
 }
 
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Default)]
 pub struct Label {
     label: AsmLabel,
 }
@@ -77,7 +77,7 @@ impl Label {
 }
 
 pub const SCRATCH_REG: RegisterID = RegisterID::R11;
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Default)]
 pub struct Jump {
     label: AsmLabel,
 }
@@ -144,8 +144,10 @@ pub fn with_swapped_register(
     }
 }
 
+#[derive(Default)]
+
 pub struct JumpList {
-    jumps: Vec<Jump>,
+    pub jumps: Vec<Jump>,
 }
 
 impl JumpList {
@@ -1352,7 +1354,9 @@ impl MacroAssemblerX86 {
             dest,
         );
     }
-    pub fn swap_fp(&mut self, reg1: XMMRegisterID, reg2: XMMRegisterID) {}
+    pub fn swap_fp(&mut self, reg1: XMMRegisterID, reg2: XMMRegisterID) {
+        todo!("{:?} swap {:?}", reg1, reg2);
+    }
 
     pub fn move_fp_double(&mut self, src: XMMRegisterID, dst: XMMRegisterID) {
         if src != dst {
@@ -1847,7 +1851,7 @@ impl MacroAssemblerX86 {
     }
 
     pub fn call_reg(&mut self, r: RegisterID, argc: usize) {
-        let call = if self.x64 {
+        let _ = if self.x64 {
             self.asm.call_r(r);
             if argc > ARG_IN_REG_COUNT {
                 let argc_on_stack = argc - ARG_IN_REG_COUNT * (if self.x64 { 8 } else { 4 });
@@ -1971,8 +1975,17 @@ impl super::MacroAssemblerBase for MacroAssemblerX86 {
             X86Asm::slink_jump(code, call.label, func as *mut u8);
         }
     }
+    fn link_jump(code: *mut u8, jump: AsmLabel, label: AsmLabel) {
+        X86Asm::slink_jump2(code, jump, label)
+    }
+    fn link_jump_ptr(code: *mut u8, from: AsmLabel, to: *const u8) {
+        unsafe { X86Asm::set_rel32(code.offset(from.0 as _), to as *mut u8) }
+    }
     fn link_pointer(code: *mut u8, label: assembler_buffer::AsmLabel, value: *mut u8) {
         X86Asm::link_pointer_or_call(code, label, value);
+    }
+    fn get_linker_addr(code: *mut u8, label: AsmLabel) -> *mut u8 {
+        X86Asm::get_reloc_addr(code, label)
     }
     fn finalize(self) -> Vec<u8> {
         self.asm.formatter.buffer.storage
@@ -1989,3 +2002,54 @@ pub enum CallConv {
 pub const ARG_IN_REG_COUNT: usize = 4;
 #[cfg(unix)]
 pub const ARG_IN_REG_COUNT: usize = 6;
+
+use linkbuffer::*;
+impl LinkBuffer<MacroAssemblerX86> {
+    pub fn allocate(&mut self, masm: &mut MacroAssemblerX86) {
+        if self.code.is_null() == false {
+            if masm.asm.data().len() > self.size {
+                return;
+            }
+            let nops_to_fill = self.size - masm.asm.data().len();
+            for _ in 0..nops_to_fill {
+                masm.asm.nop();
+            }
+            self.did_allocate = true;
+            return;
+        }
+        let mut init_size = masm.asm.data().len();
+
+        while init_size % 32 != 0 {
+            masm.asm.nop();
+            init_size = masm.asm.data().len();
+        }
+
+        self.did_allocate = true;
+        self.exec_mem = crate::MEM_ALLOC
+            .lock()
+            .unwrap()
+            .allocate(init_size, 32)
+            .unwrap();
+        self.code = self.exec_mem;
+        self.size = init_size;
+        self.did_allocate = true;
+    }
+    pub fn from_masm(masm: &mut MacroAssemblerX86) -> Self {
+        let mut l = Self::new(std::ptr::null_mut());
+        l.link_code(masm);
+
+        l
+    }
+
+    pub fn link_code(&mut self, masm: &mut MacroAssemblerX86) {
+        masm.asm.label();
+        self.allocate(masm);
+        if !self.did_allocate {
+            return;
+        }
+        let buffer = masm.asm.data().as_ptr();
+        unsafe {
+            std::ptr::copy_nonoverlapping(buffer, self.code, masm.asm.data().len());
+        }
+    }
+}

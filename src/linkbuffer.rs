@@ -3,7 +3,10 @@ use assembler_buffer::*;
 
 use std::marker::PhantomData;
 pub struct LinkBuffer<T: MacroAssemblerBase> {
-    code: *mut u8,
+    pub code: *mut u8,
+    pub size: usize,
+    pub did_allocate: bool,
+    pub exec_mem: *mut u8,
     _m: PhantomData<T>,
 }
 
@@ -11,14 +14,32 @@ impl<T: MacroAssemblerBase> LinkBuffer<T> {
     pub fn new(code: *mut u8) -> Self {
         Self {
             code,
+            size: 0,
+            did_allocate: false,
+            exec_mem: std::ptr::null_mut(),
             _m: PhantomData::default(),
         }
     }
+
     pub fn link_data(&self, at: AsmLabel, value: *mut u8) {
         T::link_pointer(self.code, at, value);
     }
     pub fn link_call(&self, at: Call, with: *const u8) {
         T::link_call(self.code, at, with as *mut _, 0);
+    }
+
+    pub fn link_jump(&self, jump: AsmLabel, to: AsmLabel) {
+        T::link_jump(self.code, jump, to);
+    }
+    pub fn link_jump_ptr(&self, jump: AsmLabel, to: *const u8) {
+        T::link_jump_ptr(self.code, jump, to);
+    }
+    pub fn location_of_label(&self, label: AsmLabel) -> *mut u8 {
+        T::get_linker_addr(self.code, label)
+    }
+
+    pub fn did_fail_to_allocate(&self) -> bool {
+        !self.did_allocate
     }
 }
 
@@ -40,17 +61,17 @@ fn round_up_to_page_size(size: usize, page_size: usize) -> usize {
 }
 
 /// A simple struct consisting of a pointer and length.
-struct PtrLen {
+pub struct PtrLen {
     #[cfg(feature = "selinux-fix")]
-    map: Option<MmapMut>,
+    pub map: Option<MmapMut>,
 
-    ptr: *mut u8,
-    len: usize,
+    pub ptr: *mut u8,
+    pub len: usize,
 }
 
 impl PtrLen {
     /// Create a new empty `PtrLen`.
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             #[cfg(feature = "selinux-fix")]
             map: None,
@@ -63,7 +84,7 @@ impl PtrLen {
     /// Create a new `PtrLen` pointing to at least `size` bytes of memory,
     /// suitably sized and aligned for memory protection.
     #[cfg(all(not(target_os = "windows"), feature = "selinux-fix"))]
-    fn with_size(size: usize) -> Result<Self, String> {
+    pub fn with_size(size: usize) -> Result<Self, String> {
         let page_size = region::page::size();
         let alloc_size = round_up_to_page_size(size, page_size);
         let map = MmapMut::map_anon(alloc_size);
@@ -83,7 +104,7 @@ impl PtrLen {
     }
 
     #[cfg(all(not(target_os = "windows"), not(feature = "selinux-fix")))]
-    fn with_size(size: usize) -> Result<Self, String> {
+    pub fn with_size(size: usize) -> Result<Self, String> {
         let mut ptr = ptr::null_mut();
         let page_size = region::page::size();
         let alloc_size = round_up_to_page_size(size, page_size);
@@ -102,7 +123,7 @@ impl PtrLen {
     }
 
     #[cfg(target_os = "windows")]
-    fn with_size(size: usize) -> Result<Self, String> {
+    pub fn with_size(size: usize) -> Result<Self, String> {
         use winapi::um::memoryapi::VirtualAlloc;
         use winapi::um::winnt::{MEM_COMMIT, MEM_RESERVE, PAGE_READWRITE};
 
@@ -265,6 +286,34 @@ impl Memory {
         }
     }
 
+    pub fn set_rwx(&mut self) {
+        self.finish_current();
+
+        #[cfg(feature = "selinux-fix")]
+        {
+            for &PtrLen { ref map, ptr, len } in &self.allocations[self.executable..] {
+                if len != 0 && map.is_some() {
+                    unsafe {
+                        region::protect(ptr, len, region::Protection::READ_WRITE_EXECUTE)
+                            .expect("unable to make memory readonly");
+                    }
+                }
+            }
+        }
+
+        #[cfg(not(feature = "selinux-fix"))]
+        {
+            for &PtrLen { ptr, len } in &self.allocations[self.executable..] {
+                if len != 0 {
+                    unsafe {
+                        region::protect(ptr, len, region::Protection::READ_WRITE_EXECUTE)
+                            .expect("unable to make memory readonly");
+                    }
+                }
+            }
+        }
+    }
+
     /// Frees all allocated memory regions that would be leaked otherwise.
     /// Likely to invalidate existing function pointers, causing unsafety.
     pub unsafe fn free_memory(&mut self) {
@@ -293,3 +342,5 @@ mod tests {
         assert_eq!(round_up_to_page_size(4097, 4096), 8192);
     }
 }
+unsafe impl Send for Memory {}
+unsafe impl Sync for Memory {}
