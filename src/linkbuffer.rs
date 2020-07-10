@@ -321,7 +321,13 @@ impl Memory {
             }
         }
     }
-
+    pub fn set_rwx_mem(mem: *mut u8, len: usize) {
+        if len != 0 {
+            unsafe {
+                region::protect(mem, len, region::Protection::READ_WRITE_EXECUTE).unwrap();
+            }
+        }
+    }
     /// Frees all allocated memory regions that would be leaked otherwise.
     /// Likely to invalidate existing function pointers, causing unsafety.
     pub unsafe fn free_memory(&mut self) {

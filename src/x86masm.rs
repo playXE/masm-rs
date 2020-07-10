@@ -2097,5 +2097,6 @@ impl LinkBuffer<MacroAssemblerX86> {
             std::ptr::copy_nonoverlapping(buffer, self.code, masm.asm.data().len());
         }
         std::mem::swap(&mut self.link_tasks, &mut masm.link_tasks);
+        Memory::set_rwx_mem(self.code, self.size);
     }
 }
