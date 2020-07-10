@@ -35,7 +35,7 @@ pub trait MacroAssemblerBase {
     fn finalize(self) -> Vec<u8>;
 }
 
-#[derive(Default)]
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
 pub struct Call {
     pub label: AsmLabel,
     pub flag: u8,

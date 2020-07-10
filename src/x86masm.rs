@@ -4,6 +4,7 @@ pub const DOUBLE_CONDITION_BIT_SPECIAL: u8 = 0x20;
 pub const DOUBLE_CONDITION_BIT_INVERT: u8 = 0x10;
 pub const DOUBLE_CONDITION_BITS: u8 = 0x10 | 0x20;
 pub const REPATCH_OFFSET_CALL_R11: usize = 3;
+#[derive(Copy, Clone, PartialEq, Eq, Default)]
 pub struct DataLabelPtr {
     label: AsmLabel,
 }
@@ -2073,7 +2074,7 @@ impl LinkBuffer<MacroAssemblerX86> {
         self.exec_mem = crate::MEM_ALLOC
             .lock()
             .unwrap()
-            .allocate(init_size, 32)
+            .allocate(init_size, 8)
             .unwrap();
         self.code = self.exec_mem;
         self.size = init_size;
