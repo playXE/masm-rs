@@ -1173,7 +1173,7 @@ impl MacroAssemblerX86 {
         left: RegisterID,
         right: RegisterID,
     ) -> Jump {
-        self.asm.cmpl_rr(left, right);
+        self.asm.cmpl_rr(right, left);
         self.branch(cond)
     }
     pub fn branch32_imm(&mut self, cond: RelationalCondition, imm: i32, right: RegisterID) -> Jump {
@@ -1210,7 +1210,7 @@ impl MacroAssemblerX86 {
     }
     pub fn branch_sub32(
         &mut self,
-        cond: RelationalCondition,
+        cond: ResultCondition,
         src: RegisterID,
         dest: RegisterID,
     ) -> Jump {
@@ -1218,12 +1218,7 @@ impl MacroAssemblerX86 {
         Jump::new(self.asm.jcc(unsafe { std::mem::transmute(cond) }))
     }
 
-    pub fn branch_sub32_imm(
-        &mut self,
-        cond: RelationalCondition,
-        imm: i32,
-        dest: RegisterID,
-    ) -> Jump {
+    pub fn branch_sub32_imm(&mut self, cond: ResultCondition, imm: i32, dest: RegisterID) -> Jump {
         self.sub32_imm(imm, dest);
         Jump::new(self.asm.jcc(unsafe { std::mem::transmute(cond) }))
     }
@@ -1262,7 +1257,7 @@ impl MacroAssemblerX86 {
         left: RegisterID,
         right: RegisterID,
     ) -> Jump {
-        self.asm.cmpq_rr(left, right);
+        self.asm.cmpq_rr(right, left);
         self.branch(cond)
     }
     pub fn branch64_imm32(
@@ -2065,7 +2060,7 @@ impl LinkBuffer<MacroAssemblerX86> {
         }
         let mut init_size = masm.asm.data().len();
 
-        while init_size % 32 != 0 {
+        while init_size % 8 != 0 {
             masm.asm.nop();
             init_size = masm.asm.data().len();
         }
