@@ -122,6 +122,7 @@ pub enum Mem {
 
     // reg1 * val1 + val2
     Offset(RegisterID, i32, i32),
+    Absolute(usize),
 }
 
 pub enum Scale {
@@ -209,6 +210,14 @@ impl MacroAssemblerX86 {
             Mem::Index(base, index, scale, offset) => {
                 self.asm.movl_mr_scaled(offset, base, index, scale, dest);
             }
+            Mem::Absolute(addr) => {
+                if self.x64 {
+                    self.move_i64(addr as _, dest);
+                } else {
+                    self.move_i32(addr as _, dest);
+                }
+                self.load32(Mem::Base(dest, 0), dest);
+            }
             _ => unreachable!(),
         }
     }
@@ -219,6 +228,15 @@ impl MacroAssemblerX86 {
             Mem::Local(ix) => self.asm.movl_rm(src, ix, RegisterID::EBP),
             Mem::Index(base, index, scale, offset) => {
                 self.asm.movl_rm_scaled(src, offset, base, index, scale)
+            }
+            Mem::Absolute(addr) => {
+                if self.x64 {
+                    self.move_i64(addr as _, SCRATCH_REG);
+                } else {
+                    self.move_i32(addr as _, SCRATCH_REG);
+                }
+
+                self.store32(src, Mem::Base(SCRATCH_REG, 0));
             }
             _ => unreachable!(),
         }
@@ -231,6 +249,15 @@ impl MacroAssemblerX86 {
             Mem::Index(base, index, scale, offset) => {
                 self.asm.movl_i32m_scaled(imm, offset, base, index, scale)
             }
+            Mem::Absolute(addr) => {
+                if self.x64 {
+                    self.move_i64(addr as _, SCRATCH_REG);
+                } else {
+                    self.move_i32(addr as _, SCRATCH_REG);
+                }
+
+                self.store32_imm(imm, Mem::Base(SCRATCH_REG, 0));
+            }
             _ => unreachable!(),
         }
     }
@@ -242,6 +269,15 @@ impl MacroAssemblerX86 {
             Mem::Index(base, index, scale, offset) => {
                 self.asm.movw_rm_scaled(src, offset, base, index, scale)
             }
+            Mem::Absolute(addr) => {
+                if self.x64 {
+                    self.move_i64(addr as _, SCRATCH_REG);
+                } else {
+                    self.move_i32(addr as _, SCRATCH_REG);
+                }
+
+                self.store16(src, Mem::Base(SCRATCH_REG, 0));
+            }
             _ => unreachable!(),
         }
     }
@@ -251,6 +287,15 @@ impl MacroAssemblerX86 {
             Mem::Local(ix) => self.asm.movw_im(imm, ix, RegisterID::EBP),
             Mem::Index(base, index, scale, offset) => {
                 self.asm.movw_im_scaled(imm, offset, base, index, scale)
+            }
+            Mem::Absolute(addr) => {
+                if self.x64 {
+                    self.move_i64(addr as _, SCRATCH_REG);
+                } else {
+                    self.move_i32(addr as _, SCRATCH_REG);
+                }
+
+                self.store16_imm(imm, Mem::Base(SCRATCH_REG, 0));
             }
             _ => unreachable!(),
         }
@@ -263,6 +308,15 @@ impl MacroAssemblerX86 {
             Mem::Index(base, index, scale, offset) => {
                 self.asm.movb_rm_scaled(src, offset, base, index, scale)
             }
+            Mem::Absolute(addr) => {
+                if self.x64 {
+                    self.move_i64(addr as _, SCRATCH_REG);
+                } else {
+                    self.move_i32(addr as _, SCRATCH_REG);
+                }
+
+                self.store8(src, Mem::Base(SCRATCH_REG, 0));
+            }
             _ => unreachable!(),
         }
     }
@@ -273,6 +327,16 @@ impl MacroAssemblerX86 {
             Mem::Index(base, index, scale, offset) => {
                 self.asm.movb_i8m_scaled(imm, offset, base, index, scale)
             }
+            Mem::Absolute(addr) => {
+                if self.x64 {
+                    self.move_i64(addr as _, SCRATCH_REG);
+                } else {
+                    self.move_i32(addr as _, SCRATCH_REG);
+                }
+
+                self.store8_imm(imm, Mem::Base(SCRATCH_REG, 0));
+            }
+
             _ => unreachable!(),
         }
     }
@@ -286,6 +350,14 @@ impl MacroAssemblerX86 {
             }
             Mem::Index(base, index, scale, offset) => {
                 self.asm.movzwl_mr_scaled(offset, base, index, scale, dest);
+            }
+            Mem::Absolute(addr) => {
+                if self.x64 {
+                    self.move_i64(addr as _, dest);
+                } else {
+                    self.move_i32(addr as _, dest);
+                }
+                self.load16(Mem::Base(dest, 0), dest);
             }
             _ => unreachable!(),
         }
@@ -302,6 +374,14 @@ impl MacroAssemblerX86 {
             Mem::Index(base, index, scale, offset) => {
                 self.asm.movzbl_mr_scaled(offset, base, index, scale, dest);
             }
+            Mem::Absolute(addr) => {
+                if self.x64 {
+                    self.move_i64(addr as _, dest);
+                } else {
+                    self.move_i32(addr as _, dest);
+                }
+                self.load8(Mem::Base(dest, 0), dest);
+            }
             _ => unreachable!(),
         }
     }
@@ -316,6 +396,15 @@ impl MacroAssemblerX86 {
             }
             Mem::Index(base, index, scale, offset) => {
                 self.asm.movsbl_mr_scaled(offset, base, index, scale, dest);
+            }
+            Mem::Absolute(addr) => {
+                if self.x64 {
+                    self.move_i64(addr as _, dest);
+                } else {
+                    self.move_i32(addr as _, dest);
+                }
+
+                self.load8_sign_extend_to_32(Mem::Base(SCRATCH_REG, 0), dest);
             }
             _ => unreachable!(),
         }
@@ -620,6 +709,45 @@ impl MacroAssemblerX86 {
                 self.asm.negl_m(ix, RegisterID::EBP);
             }
             _ => unreachable!(),
+        }
+    }
+    pub fn or16(&mut self, src: RegisterID, dst: Mem) {
+        match dst {
+            Mem::Base(base, off) => {
+                self.asm.orw_rm(src, off, base);
+            }
+            Mem::Absolute(addr) => {
+                if self.x64 {
+                    self.asm.movq_i64r(addr as _, SCRATCH_REG);
+                } else {
+                    self.asm.mov_i32r(addr as _, SCRATCH_REG);
+                }
+                self.asm.orw_rm(src, 0, SCRATCH_REG);
+            }
+            Mem::Index(base, index, scale, offset) => {
+                self.asm.orw_rm_scaled(src, offset, base, index, scale);
+            }
+            _ => todo!(),
+        }
+    }
+
+    pub fn or16_imm(&mut self, src: i16, dst: Mem) {
+        match dst {
+            Mem::Base(base, off) => {
+                self.asm.orw_im(src as _, off, base);
+            }
+            Mem::Absolute(addr) => {
+                if self.x64 {
+                    self.asm.movq_i64r(addr as _, SCRATCH_REG);
+                } else {
+                    self.asm.mov_i32r(addr as _, SCRATCH_REG);
+                }
+                self.asm.orw_im(src as _, 0, SCRATCH_REG);
+            }
+            Mem::Index(base, index, scale, offset) => {
+                self.asm.orw_im_scaled(src as _, offset, base, index, scale);
+            }
+            _ => todo!(),
         }
     }
 
@@ -1222,6 +1350,49 @@ impl MacroAssemblerX86 {
         self.sub32_imm(imm, dest);
         Jump::new(self.asm.jcc(unsafe { std::mem::transmute(cond) }))
     }
+    pub fn branch_mul32_rr(
+        &mut self,
+        cond: ResultCondition,
+        src: RegisterID,
+        dest: RegisterID,
+    ) -> Jump {
+        self.mul32_rr(src, dest);
+        Jump::new(self.asm.jcc(unsafe { std::mem::transmute(cond) }))
+    }
+    pub fn branch_mul32(
+        &mut self,
+        cond: ResultCondition,
+        src: RegisterID,
+        src2: RegisterID,
+        dest: RegisterID,
+    ) -> Jump {
+        self.move_rr(src2, dest);
+        self.mul32_rr(src, dest);
+        Jump::new(self.asm.jcc(unsafe { std::mem::transmute(cond) }))
+    }
+    pub fn branch_mul32_imm(&mut self, cond: ResultCondition, imm: i32, dest: RegisterID) -> Jump {
+        self.mul32_imm(imm, dest, dest);
+        Jump::new(self.asm.jcc(unsafe { std::mem::transmute(cond) }))
+    }
+    pub fn branch32_test(
+        &mut self,
+        cond: ResultCondition,
+        reg: RegisterID,
+        mask: RegisterID,
+    ) -> Jump {
+        self.asm.testl_rr(reg, mask);
+        Jump::new(self.asm.jcc(unsafe { std::mem::transmute(cond) }))
+    }
+
+    pub fn branch32_test_imm32(
+        &mut self,
+        cond: ResultCondition,
+        reg: RegisterID,
+        mask: i32,
+    ) -> Jump {
+        self.asm.testl_i32r(mask, reg);
+        Jump::new(self.asm.jcc(unsafe { std::mem::transmute(cond) }))
+    }
     pub fn branch64_test(
         &mut self,
         cond: ResultCondition,
@@ -1418,6 +1589,10 @@ impl MacroAssemblerX86 {
             Mem::Index(base, index, scale, offset) => {
                 self.asm.movq_mr_scaled(offset, base, index, scale, dest);
             }
+            Mem::Absolute(addr) => {
+                self.asm.movq_i64r(addr as _, dest);
+                self.load64(Mem::Base(dest, 0), dest);
+            }
             _ => unreachable!(),
         }
     }
@@ -1438,6 +1613,15 @@ impl MacroAssemblerX86 {
             Mem::Index(base, index, scale, offset) => {
                 self.asm.movq_rm_scaled(src, offset, base, index, scale)
             }
+            Mem::Absolute(addr) => {
+                if self.x64 {
+                    self.move_i64(addr as _, SCRATCH_REG);
+                } else {
+                    self.move_i32(addr as _, SCRATCH_REG);
+                }
+
+                self.store64(src, Mem::Base(SCRATCH_REG, 0));
+            }
             _ => unreachable!(),
         }
     }
@@ -1448,6 +1632,15 @@ impl MacroAssemblerX86 {
             Mem::Local(ix) => self.asm.movq_i32m(imm, ix, RegisterID::EBP),
             Mem::Index(base, index, scale, offset) => {
                 self.asm.movq_i32m_scaled(imm, offset, base, index, scale)
+            }
+            Mem::Absolute(addr) => {
+                if self.x64 {
+                    self.move_i64(addr as _, SCRATCH_REG);
+                } else {
+                    self.move_i32(addr as _, SCRATCH_REG);
+                }
+
+                self.store64_imm32(imm, Mem::Base(SCRATCH_REG, 0));
             }
             _ => unreachable!(),
         }

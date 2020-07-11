@@ -437,6 +437,37 @@ impl X86Asm {
         self.formatter
             .one_byte_op64_off(OP_GROUP3_Ev, GROUP3_OP_NOT as _, base, offset);
     }
+
+    pub fn orw_rm(&mut self, src: RegisterID, offset: i32, base: RegisterID) {
+        self.formatter.prefix(PRE_OPERAND_SIZE);
+        self.orl_rm(src, offset, base);
+    }
+    pub fn orw_rm_scaled(
+        &mut self,
+        src: RegisterID,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+    ) {
+        self.formatter.prefix(PRE_OPERAND_SIZE);
+        self.orl_rm_scaled(src, offset, base, index, scale);
+    }
+
+    pub fn orw_im(&mut self, src: i32, offset: i32, base: RegisterID) {
+        self.formatter.prefix(PRE_OPERAND_SIZE);
+        self.orl_im(src, offset, base);
+    }
+    pub fn orw_im_scaled(
+        &mut self,
+        src: i32,
+        offset: i32,
+        base: RegisterID,
+        index: RegisterID,
+        scale: i32,
+    ) {
+        unimplemented!()
+    }
     pub fn orl_rr(&mut self, src: RegisterID, dst: RegisterID) {
         self.formatter.one_byte_op_rm(OP_OR_EvGv, src as _, dst);
     }
