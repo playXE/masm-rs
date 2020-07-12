@@ -1374,6 +1374,41 @@ impl MacroAssemblerX86 {
         self.mul32_imm(imm, dest, dest);
         Jump::new(self.asm.jcc(unsafe { std::mem::transmute(cond) }))
     }
+    pub fn branch_convert_double_to_int32(
+        &mut self,
+        src: XMMRegisterID,
+        dest: RegisterID,
+        failure_cases: &mut JumpList,
+        fp_temp: XMMRegisterID,
+        neg_zero_check: bool,
+    ) {
+        self.asm.cvttsd2si_rr(src, dest);
+        if self.x64 {
+            if neg_zero_check {
+                let value_is_non_zero =
+                    self.branch32_test_imm32(ResultCondition::NonZero, dest, -1);
+                self.asm.movmskpd_rr(src, SCRATCH_REG);
+                failure_cases.push(self.branch32_test_imm32(
+                    ResultCondition::NonZero,
+                    SCRATCH_REG,
+                    1,
+                ));
+                value_is_non_zero.link(self);
+            }
+        } else {
+            if neg_zero_check {
+                failure_cases.push(self.branch32_test_imm32(ResultCondition::Zero, dest, -1));
+            }
+        }
+        self.convert_int32_to_double(dest, fp_temp);
+        self.asm.ucomisd_rr(fp_temp, src);
+        failure_cases.push(Jump {
+            label: self.asm.jcc(Condition::P),
+        });
+        failure_cases.push(Jump {
+            label: self.asm.jcc(Condition::NE),
+        });
+    }
     pub fn branch32_test(
         &mut self,
         cond: ResultCondition,
