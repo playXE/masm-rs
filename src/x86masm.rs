@@ -1481,7 +1481,8 @@ impl MacroAssemblerX86 {
         left: RegisterID,
         right: i64,
     ) -> Jump {
-        if cond == RelationalCondition::Equal || cond == RelationalCondition::NotEqual && right == 0
+        if (cond == RelationalCondition::Equal || cond == RelationalCondition::NotEqual)
+            && right == 0
         {
             self.asm.testq_rr(left, left);
             return Jump::new(self.asm.jcc(unsafe { std::mem::transmute(cond) }));
