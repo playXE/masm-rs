@@ -1292,6 +1292,19 @@ impl MacroAssemblerX86 {
             }
         }
     }
+    pub fn branch_double(
+        &mut self,
+        cond: FpCondition,
+        left: XMMRegisterID,
+        right: XMMRegisterID,
+    ) -> Jump {
+        if (cond as i32 & DOUBLE_CONDITION_BIT_INVERT as i32) != 0 {
+            self.asm.ucomisd_rr(left, right);
+        } else {
+            self.asm.ucomisd_rr(right, left);
+        }
+        return self.jump_after_fp_cmp(cond, left, right);
+    }
     pub fn branch(&mut self, cond: RelationalCondition) -> Jump {
         Jump::new(self.asm.jcc(unsafe { std::mem::transmute(cond) }))
     }
@@ -1447,7 +1460,6 @@ impl MacroAssemblerX86 {
         self.move_i64(mask, SCRATCH_REG);
         self.branch64_test(cond, reg, SCRATCH_REG)
     }
-
     pub fn branch64_test_imm32(
         &mut self,
         cond: ResultCondition,
@@ -1457,6 +1469,26 @@ impl MacroAssemblerX86 {
         self.asm.testq_i32r(mask, reg);
         Jump::new(self.asm.jcc(unsafe { std::mem::transmute(cond) }))
     }
+    pub fn branch_double_zero_or_nan(
+        &mut self,
+        reg: XMMRegisterID,
+        scratch: XMMRegisterID,
+    ) -> Jump {
+        self.asm.xorpd_rr(scratch, scratch);
+        return self.branch_double(FpCondition::EqualOrUnordered, reg, scratch);
+    }
+
+    pub fn branch64_imm64_mem(&mut self, cond: RelationalCondition, imm: i64, mem: Mem) -> Jump {
+        match mem {
+            Mem::Base(base, offset) => {
+                self.move_i64(imm, SCRATCH_REG);
+                self.asm.cmpq_rm(SCRATCH_REG, offset, base);
+            }
+            _ => unimplemented!(),
+        }
+        Jump::new(self.asm.jcc(unsafe { std::mem::transmute(cond) }))
+    }
+
     pub fn branch64(
         &mut self,
         cond: RelationalCondition,
