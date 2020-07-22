@@ -1,6 +1,7 @@
 #![allow(non_upper_case_globals)]
 #![allow(non_snake_case)]
 #![allow(non_camel_case_types)]
+pub mod aarch64;
 pub mod air;
 pub mod arvm7_assembler;
 pub mod asm_constant_pool;
