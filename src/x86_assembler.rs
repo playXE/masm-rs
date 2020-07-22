@@ -460,11 +460,11 @@ impl X86Asm {
     }
     pub fn orw_im_scaled(
         &mut self,
-        src: i32,
-        offset: i32,
-        base: RegisterID,
-        index: RegisterID,
-        scale: i32,
+        _src: i32,
+        _offset: i32,
+        _base: RegisterID,
+        _index: RegisterID,
+        _scale: i32,
     ) {
         unimplemented!()
     }
