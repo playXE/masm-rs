@@ -1224,7 +1224,7 @@ impl MacroAssemblerX86 {
         self.asm.cmpq_ir(right, left);
         self.set32(unsafe { std::mem::transmute(cond) }, dest);
     }
-    pub fn test8(&mut self, cond: RelationalCondition, addr: Mem, mask: i32, dest: RegisterID) {
+    pub fn test8(&mut self, cond: ResultCondition, addr: Mem, mask: i32, dest: RegisterID) {
         let (base, off) = match addr {
             Mem::Base(base, off) => (base, off),
             _ => unreachable!(),
@@ -1239,7 +1239,7 @@ impl MacroAssemblerX86 {
 
     pub fn test32(
         &mut self,
-        cond: RelationalCondition,
+        cond: ResultCondition,
         reg: RegisterID,
         mask: RegisterID,
         dest: RegisterID,
@@ -1250,7 +1250,7 @@ impl MacroAssemblerX86 {
 
     pub fn test64(
         &mut self,
-        cond: RelationalCondition,
+        cond: ResultCondition,
         reg: RegisterID,
         mask: RegisterID,
         dest: RegisterID,
