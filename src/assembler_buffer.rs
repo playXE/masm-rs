@@ -45,21 +45,18 @@ impl AsmBuffer {
     }
 
     pub fn put_short(&mut self, short: i16) {
-        let bytes: [i8; 2] = unsafe { std::mem::transmute(short) };
-        self.put_byte(bytes[0]);
-        self.put_byte(bytes[1]);
+        let bytes = short.to_le_bytes();
+        self.append(&bytes[..]);
     }
 
     pub fn put_int(&mut self, int: i32) {
-        let shorts: [i16; 2] = unsafe { std::mem::transmute(int) };
-        self.put_short(shorts[0]);
-        self.put_short(shorts[1]);
+        let bytes = int.to_le_bytes();
+        self.append(&bytes[..]);
     }
 
     pub fn put_long(&mut self, long: i64) {
-        let ints: [i32; 2] = unsafe { std::mem::transmute(long) };
-        self.put_int(ints[0]);
-        self.put_int(ints[1]);
+        let bytes = long.to_le_bytes();
+        self.append(&bytes[..]);
     }
 
     pub fn is_aligned(&self, align: usize) -> bool {
