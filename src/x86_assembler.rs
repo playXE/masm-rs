@@ -2424,6 +2424,7 @@ pub struct X86AsmFormatter {
     pub buffer: AsmBuffer,
     x64: bool,
 }
+#[repr(u8)]
 pub enum Condition {
     O,
     NO,
@@ -2442,6 +2443,40 @@ pub enum Condition {
     LE,
     G,
 }
+
+impl From<u8> for Condition {
+    fn from(x: u8) -> Self {
+        use Condition::*;
+        match x {
+            0 => O,
+            1 => NO,
+            2 => B,
+            3 => AE,
+            4 => E,
+            5 => NE,
+            6 => BE,
+            7 => A,
+            8 => S,
+            9 => NS,
+            10 => P,
+            11 => NP,
+            12 => L,
+            13 => GE,
+            14 => LE,
+            15 => G,
+            _ => panic!("{} is not a valid condition", x),
+        }
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn condition_u8_roundtrip() {
+    for i in 0..16u8 {
+        assert_eq!(i, Condition::from(i) as u8);
+    }
+}
+
 macro_rules! c {
         ($val: ident = $x: expr) => {
             pub const $val: u8= $x;

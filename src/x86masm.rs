@@ -39,6 +39,14 @@ pub enum RelationalCondition {
     LessThan = Condition::L as u8,
     LessThanOrEqual = Condition::LE as u8,
 }
+
+impl From<RelationalCondition> for Condition {
+    #[inline]
+    fn from(x: RelationalCondition) -> Condition {
+        (x as u8).into()
+    }
+}
+
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
 #[repr(u8)]
 pub enum ResultCondition {
@@ -48,6 +56,14 @@ pub enum ResultCondition {
     Zero = Condition::E as u8,
     NonZero = Condition::NE as u8,
 }
+
+impl From<ResultCondition> for Condition {
+    #[inline]
+    fn from(x: ResultCondition) -> Condition {
+        (x as u8).into()
+    }
+}
+
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
 #[repr(u8)]
 pub enum FpCondition {
@@ -1161,10 +1177,7 @@ impl MacroAssemblerX86 {
             is_equal.link(self);
             return result;
         }
-        return Jump::new(
-            self.asm
-                .jcc(unsafe { std::mem::transmute(cond as u8 & !DOUBLE_CONDITION_BITS) }),
-        );
+        return Jump::new(self.asm.jcc((cond as u8 & !DOUBLE_CONDITION_BITS).into()));
     }
 
     pub fn ret(&mut self) {
@@ -1174,7 +1187,7 @@ impl MacroAssemblerX86 {
         match left {
             Mem::Base(base, off) => {
                 self.asm.cmpb_im(right, off, base);
-                self.set32(unsafe { std::mem::transmute(cond) }, dest);
+                self.set32(cond.into(), dest);
             }
             _ => unreachable!(),
         }
@@ -1188,7 +1201,7 @@ impl MacroAssemblerX86 {
         dest: RegisterID,
     ) {
         self.asm.cmpl_rr(right, left);
-        self.set32(unsafe { std::mem::transmute(cond) }, dest);
+        self.set32(cond.into(), dest);
     }
 
     pub fn compare32_imm(
@@ -1200,7 +1213,7 @@ impl MacroAssemblerX86 {
     ) {
         if right == 0 {}
         self.asm.cmpl_ir(right, left);
-        self.set32(unsafe { std::mem::transmute(cond) }, dest);
+        self.set32(cond.into(), dest);
     }
     pub fn compare64(
         &mut self,
@@ -1210,7 +1223,7 @@ impl MacroAssemblerX86 {
         dest: RegisterID,
     ) {
         self.asm.cmpq_rr(right, left);
-        self.set32(unsafe { std::mem::transmute(cond) }, dest);
+        self.set32(cond.into(), dest);
     }
 
     pub fn compare64_imm(
@@ -1222,7 +1235,7 @@ impl MacroAssemblerX86 {
     ) {
         if right == 0 {}
         self.asm.cmpq_ir(right, left);
-        self.set32(unsafe { std::mem::transmute(cond) }, dest);
+        self.set32(cond.into(), dest);
     }
     pub fn test8(&mut self, cond: ResultCondition, addr: Mem, mask: i32, dest: RegisterID) {
         let (base, off) = match addr {
@@ -1234,7 +1247,7 @@ impl MacroAssemblerX86 {
         } else {
             self.asm.testb_im(mask, off, base);
         }
-        self.set32(unsafe { std::mem::transmute(cond) }, dest);
+        self.set32(cond.into(), dest);
     }
 
     pub fn test32(
@@ -1245,7 +1258,7 @@ impl MacroAssemblerX86 {
         dest: RegisterID,
     ) {
         self.asm.testl_rr(reg, mask);
-        self.set32(unsafe { std::mem::transmute(cond) }, dest);
+        self.set32(cond.into(), dest);
     }
 
     pub fn test64(
@@ -1256,7 +1269,7 @@ impl MacroAssemblerX86 {
         dest: RegisterID,
     ) {
         self.asm.testq_rr(reg, mask);
-        self.set32(unsafe { std::mem::transmute(cond) }, dest);
+        self.set32(cond.into(), dest);
     }
     pub fn trap_safepoint(&mut self, page_addr: usize) {
         if self.x64 {
@@ -1306,7 +1319,7 @@ impl MacroAssemblerX86 {
         return self.jump_after_fp_cmp(cond, left, right);
     }
     pub fn branch(&mut self, cond: RelationalCondition) -> Jump {
-        Jump::new(self.asm.jcc(unsafe { std::mem::transmute(cond) }))
+        Jump::new(self.asm.jcc(cond.into()))
     }
     pub fn branch32(
         &mut self,
@@ -1329,7 +1342,7 @@ impl MacroAssemblerX86 {
         dest: RegisterID,
     ) -> Jump {
         self.add32_rr(src, dest);
-        Jump::new(self.asm.jcc(unsafe { std::mem::transmute(cond) }))
+        Jump::new(self.asm.jcc(cond.into()))
     }
     pub fn branch_add32(
         &mut self,
@@ -1347,7 +1360,7 @@ impl MacroAssemblerX86 {
     }
     pub fn branch_add32_imm(&mut self, cond: ResultCondition, imm: i32, dest: RegisterID) -> Jump {
         self.add32_imm(imm, dest);
-        Jump::new(self.asm.jcc(unsafe { std::mem::transmute(cond) }))
+        Jump::new(self.asm.jcc(cond.into()))
     }
     pub fn branch_sub32(
         &mut self,
@@ -1356,12 +1369,12 @@ impl MacroAssemblerX86 {
         dest: RegisterID,
     ) -> Jump {
         self.sub32_rr(src, dest);
-        Jump::new(self.asm.jcc(unsafe { std::mem::transmute(cond) }))
+        Jump::new(self.asm.jcc(cond.into()))
     }
 
     pub fn branch_sub32_imm(&mut self, cond: ResultCondition, imm: i32, dest: RegisterID) -> Jump {
         self.sub32_imm(imm, dest);
-        Jump::new(self.asm.jcc(unsafe { std::mem::transmute(cond) }))
+        Jump::new(self.asm.jcc(cond.into()))
     }
     pub fn branch_mul32_rr(
         &mut self,
@@ -1370,7 +1383,7 @@ impl MacroAssemblerX86 {
         dest: RegisterID,
     ) -> Jump {
         self.mul32_rr(src, dest);
-        Jump::new(self.asm.jcc(unsafe { std::mem::transmute(cond) }))
+        Jump::new(self.asm.jcc(cond.into()))
     }
     pub fn branch_mul32(
         &mut self,
@@ -1381,11 +1394,11 @@ impl MacroAssemblerX86 {
     ) -> Jump {
         self.move_rr(src2, dest);
         self.mul32_rr(src, dest);
-        Jump::new(self.asm.jcc(unsafe { std::mem::transmute(cond) }))
+        Jump::new(self.asm.jcc(cond.into()))
     }
     pub fn branch_mul32_imm(&mut self, cond: ResultCondition, imm: i32, dest: RegisterID) -> Jump {
         self.mul32_imm(imm, dest, dest);
-        Jump::new(self.asm.jcc(unsafe { std::mem::transmute(cond) }))
+        Jump::new(self.asm.jcc(cond.into()))
     }
     pub fn branch_convert_double_to_int32(
         &mut self,
@@ -1429,7 +1442,7 @@ impl MacroAssemblerX86 {
         mask: RegisterID,
     ) -> Jump {
         self.asm.testl_rr(reg, mask);
-        Jump::new(self.asm.jcc(unsafe { std::mem::transmute(cond) }))
+        Jump::new(self.asm.jcc(cond.into()))
     }
 
     pub fn branch32_test_imm32(
@@ -1439,7 +1452,7 @@ impl MacroAssemblerX86 {
         mask: i32,
     ) -> Jump {
         self.asm.testl_i32r(mask, reg);
-        Jump::new(self.asm.jcc(unsafe { std::mem::transmute(cond) }))
+        Jump::new(self.asm.jcc(cond.into()))
     }
     pub fn branch64_test(
         &mut self,
@@ -1448,7 +1461,7 @@ impl MacroAssemblerX86 {
         mask: RegisterID,
     ) -> Jump {
         self.asm.testq_rr(reg, mask);
-        Jump::new(self.asm.jcc(unsafe { std::mem::transmute(cond) }))
+        Jump::new(self.asm.jcc(cond.into()))
     }
 
     pub fn branch64_test_imm64(
@@ -1467,7 +1480,7 @@ impl MacroAssemblerX86 {
         mask: i32,
     ) -> Jump {
         self.asm.testq_i32r(mask, reg);
-        Jump::new(self.asm.jcc(unsafe { std::mem::transmute(cond) }))
+        Jump::new(self.asm.jcc(cond.into()))
     }
     pub fn branch_double_zero_or_nan(
         &mut self,
@@ -1486,7 +1499,7 @@ impl MacroAssemblerX86 {
             }
             _ => unimplemented!(),
         }
-        Jump::new(self.asm.jcc(unsafe { std::mem::transmute(cond) }))
+        Jump::new(self.asm.jcc(cond.into()))
     }
 
     pub fn branch64(
@@ -1517,7 +1530,7 @@ impl MacroAssemblerX86 {
             && right == 0
         {
             self.asm.testq_rr(left, left);
-            return Jump::new(self.asm.jcc(unsafe { std::mem::transmute(cond) }));
+            return Jump::new(self.asm.jcc(cond.into()));
         }
         self.move_i64(right, SCRATCH_REG);
         self.branch64(cond, left, SCRATCH_REG)
@@ -1588,10 +1601,7 @@ impl MacroAssemblerX86 {
         } else {
             compare(self, right, left);
         }
-        self.set32(
-            unsafe { std::mem::transmute(cond as u8 & !DOUBLE_CONDITION_BITS) },
-            dest,
-        );
+        self.set32((cond as u8 & !DOUBLE_CONDITION_BITS).into(), dest);
     }
     pub fn swap_fp(&mut self, reg1: XMMRegisterID, reg2: XMMRegisterID) {
         todo!("{:?} swap {:?}", reg1, reg2);
