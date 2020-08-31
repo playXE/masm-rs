@@ -221,23 +221,14 @@ impl Memory {
         self.position = size;
         Ok(self.current.ptr)
     }
-    pub fn set_readable_and_executable_ptr(&mut self, code: *mut u8, size: usize) {
-        #[cfg(feature = "selinux-fix")]
-        {
-            unsafe {
-                region::protect(code, size, region::Protection::READ_EXECUTE).unwrap();
-            }
-        }
 
-        #[cfg(not(feature = "selinux-fix"))]
-        {
-            unsafe {
-                region::protect(code, size, region::Protection::READ_EXECUTE).unwrap();
-            }
+    pub fn set_readable_and_executable_ptr(&mut self, code: *mut u8, size: usize) {
+        unsafe {
+            region::protect(code, size, region::Protection::READ_EXECUTE).unwrap();
         }
     }
-    /// Set all memory allocated in this `Memory` up to now as readable and executable.
-    pub fn set_readable_and_executable(&mut self) {
+
+    fn set_protection(&mut self, protection: region::Protection) {
         self.finish_current();
 
         #[cfg(feature = "selinux-fix")]
@@ -245,8 +236,8 @@ impl Memory {
             for &PtrLen { ref map, ptr, len } in &self.allocations[self.executable..] {
                 if len != 0 && map.is_some() {
                     unsafe {
-                        region::protect(ptr, len, region::Protection::READ_EXECUTE)
-                            .expect("unable to make memory readable+executable");
+                        region::protect(ptr, len, protection)
+                            .expect("unable to set memory protection");
                     }
                 }
             }
@@ -257,70 +248,28 @@ impl Memory {
             for &PtrLen { ptr, len } in &self.allocations[self.executable..] {
                 if len != 0 {
                     unsafe {
-                        region::protect(ptr, len, region::Protection::READ_EXECUTE)
-                            .expect("unable to make memory readable+executable");
+                        region::protect(ptr, len, protection)
+                            .expect("unable to set memory protection");
                     }
                 }
             }
         }
+    }
+
+    /// Set all memory allocated in this `Memory` up to now as readable and executable.
+    pub fn set_readable_and_executable(&mut self) {
+        self.set_protection(region::Protection::READ_EXECUTE);
     }
 
     /// Set all memory allocated in this `Memory` up to now as readonly.
     pub fn set_readonly(&mut self) {
-        self.finish_current();
-
-        #[cfg(feature = "selinux-fix")]
-        {
-            for &PtrLen { ref map, ptr, len } in &self.allocations[self.executable..] {
-                if len != 0 && map.is_some() {
-                    unsafe {
-                        region::protect(ptr, len, region::Protection::READ)
-                            .expect("unable to make memory readonly");
-                    }
-                }
-            }
-        }
-
-        #[cfg(not(feature = "selinux-fix"))]
-        {
-            for &PtrLen { ptr, len } in &self.allocations[self.executable..] {
-                if len != 0 {
-                    unsafe {
-                        region::protect(ptr, len, region::Protection::READ)
-                            .expect("unable to make memory readonly");
-                    }
-                }
-            }
-        }
+        self.set_protection(region::Protection::READ);
     }
 
     pub fn set_rwx(&mut self) {
-        self.finish_current();
-
-        #[cfg(feature = "selinux-fix")]
-        {
-            for &PtrLen { ref map, ptr, len } in &self.allocations[self.executable..] {
-                if len != 0 && map.is_some() {
-                    unsafe {
-                        region::protect(ptr, len, region::Protection::READ_WRITE_EXECUTE)
-                            .expect("unable to make memory readonly");
-                    }
-                }
-            }
-        }
-
-        #[cfg(not(feature = "selinux-fix"))]
-        {
-            for &PtrLen { ptr, len } in &self.allocations[self.executable..] {
-                if len != 0 {
-                    unsafe {
-                        region::protect(ptr, len, region::Protection::READ_WRITE_EXECUTE)
-                            .expect("unable to make memory readonly");
-                    }
-                }
-            }
-        }
+        self.set_protection(region::Protection::READ_WRITE_EXECUTE);
     }
+
     pub fn set_rwx_mem(mem: *mut u8, len: usize) {
         if len != 0 {
             unsafe {
@@ -328,6 +277,7 @@ impl Memory {
             }
         }
     }
+
     /// Frees all allocated memory regions that would be leaked otherwise.
     /// Likely to invalidate existing function pointers, causing unsafety.
     pub unsafe fn free_memory(&mut self) {
