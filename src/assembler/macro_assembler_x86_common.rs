@@ -2340,6 +2340,16 @@ impl MacroAssemblerX86Common {
         }
     }
 
+    pub fn push_pair(&mut self, src1: u8, src2: u8) {
+        self.assembler.push_r(src2);
+        self.assembler.push_r(src1);
+    }
+
+    pub fn pop_pair(&mut self, dest1: u8, dest2: u8) {
+        self.assembler.pop_r(dest1);
+        self.assembler.pop_r(dest2);
+    }
+
     pub fn mov(&mut self, src: impl Into<Operand>, dest: impl Into<Operand>) {
         let src = src.into();
         let dest = dest.into();

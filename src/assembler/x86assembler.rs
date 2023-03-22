@@ -944,27 +944,27 @@ impl X86Assembler {
     }
 
     pub fn orq_rr(&mut self, src: u8, dst: u8) {
-        self.formatter.two_byte_op64_rm(OP_OR_EvGv, src, dst);
+        self.formatter.one_byte_op64_rm(OP_OR_EvGv, src, dst);
     }
 
     pub fn orq_mr(&mut self, offset: i32, base: u8, dst: u8) {
         self.formatter
-            .two_byte_op64_mem(OP_OR_GvEv, dst, base, offset);
+            .one_byte_op64_mem(OP_OR_GvEv, dst, base, offset);
     }
 
     pub fn orq_mr_scaled(&mut self, offset: i32, base: u8, index: u8, scale: u8, dst: u8) {
         self.formatter
-            .two_byte_op64_mem_scaled(OP_OR_GvEv, dst, base, index, scale, offset);
+            .one_byte_op64_mem_scaled(OP_OR_GvEv, dst, base, index, scale, offset);
     }
 
     pub fn orq_rm(&mut self, src: u8, offset: i32, base: u8) {
         self.formatter
-            .two_byte_op64_mem(OP_OR_EvGv, src, base, offset);
+            .one_byte_op64_mem(OP_OR_EvGv, src, base, offset);
     }
 
     pub fn orq_rm_scaled(&mut self, src: u8, offset: i32, base: u8, index: u8, scale: u8) {
         self.formatter
-            .two_byte_op64_mem_scaled(OP_OR_EvGv, src, base, index, scale, offset);
+            .one_byte_op64_mem_scaled(OP_OR_EvGv, src, base, index, scale, offset);
     }
 
     pub fn orq_im(&mut self, imm: i32, offset: i32, base: u8) {
@@ -1006,14 +1006,14 @@ impl X86Assembler {
     pub fn orq_ir(&mut self, imm: i32, dst: u8) {
         if can_sign_extend_8_32(imm) {
             self.formatter
-                .two_byte_op64_rm(OP_GROUP1_EvIb, GROUP1_OP_OR, dst);
+                .one_byte_op64_rm(OP_GROUP1_EvIb, GROUP1_OP_OR, dst);
             self.formatter.immediate8(imm);
         } else {
             if dst == eax {
                 self.formatter.one_byte_op64(OP_OR_EAXIv);
             } else {
                 self.formatter
-                    .two_byte_op64_rm(OP_GROUP1_EvIz, GROUP1_OP_OR, dst);
+                    .one_byte_op64_rm(OP_GROUP1_EvIz, GROUP1_OP_OR, dst);
             }
 
             self.formatter.immediate32(imm);
