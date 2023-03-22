@@ -2327,6 +2327,19 @@ impl MacroAssemblerX86Common {
         self.assembler.movl_rr(src, dest);
     }
 
+    pub fn pop(&mut self, dest: u8) {
+        self.assembler.pop_r(dest);
+    }
+
+    pub fn push(&mut self, src: impl Into<Operand>) {
+        match src.into() {
+            Operand::Register(src) => self.assembler.push_r(src),
+            Operand::Imm32(imm) => self.assembler.push_i32(imm),
+            Operand::Address(addr) => self.assembler.push_m(addr.offset, addr.base),
+            op => unreachable!("{:?}", op),
+        }
+    }
+
     pub fn mov(&mut self, src: impl Into<Operand>, dest: impl Into<Operand>) {
         let src = src.into();
         let dest = dest.into();

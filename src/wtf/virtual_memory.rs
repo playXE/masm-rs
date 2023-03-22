@@ -157,6 +157,7 @@ impl<VM: VirtualMemoryImpl> VirtualMemory<VM> {
         self.alias.start() - self.region.start()
     }
 
+
     pub fn contains(&self, addr: usize) -> bool {
         self.region.contains(addr)
     }
@@ -169,11 +170,12 @@ impl<VM: VirtualMemoryImpl> VirtualMemory<VM> {
         self.reserved.start() != 0
     }
 
-    pub(crate) const fn new(
+    pub(crate)  fn new(
         region: MemoryRegion,
         alias: MemoryRegion,
         reserved: MemoryRegion,
     ) -> Self {
+        assert_eq!(region.start(), alias.start());
         VirtualMemory {
             region,
             alias,

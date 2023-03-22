@@ -225,7 +225,7 @@ impl LinkBuffer {
             return Ok(result);
         }
 
-        try_to_disassemble(result.start(), result.size_in_bytes(), "    ", out)?;
+        try_to_disassemble(result.start(), result.end() as usize - result.start() as usize, "    ", out)?;
 
         Ok(result)
     }
