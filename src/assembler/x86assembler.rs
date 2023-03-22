@@ -1383,11 +1383,11 @@ impl X86Assembler {
     pub fn xorq_ir(&mut self, imm: i32, dst: u8) {
         if can_sign_extend_8_32(imm) {
             self.formatter
-                .two_byte_op64_rm(OP_GROUP1_EvIb, GROUP1_OP_XOR, dst);
+                .one_byte_op64_rm(OP_GROUP1_EvIb, GROUP1_OP_XOR, dst);
             self.formatter.immediate8(imm);
         } else {
             self.formatter
-                .two_byte_op64_rm(OP_GROUP1_EvIz, GROUP1_OP_XOR, dst);
+                .one_byte_op64_rm(OP_GROUP1_EvIz, GROUP1_OP_XOR, dst);
             self.formatter.immediate32(imm);
         }
     }
@@ -1395,33 +1395,33 @@ impl X86Assembler {
     pub fn xorq_im(&mut self, imm: i32, offset: i32, base: u8) {
         if can_sign_extend_8_32(imm) {
             self.formatter
-                .two_byte_op64_mem(OP_GROUP1_EvIb, GROUP1_OP_XOR, base, offset);
+                .one_byte_op64_mem(OP_GROUP1_EvIb, GROUP1_OP_XOR, base, offset);
             self.formatter.immediate8(imm);
         } else {
             self.formatter
-                .two_byte_op64_mem(OP_GROUP1_EvIz, GROUP1_OP_XOR, base, offset);
+                .one_byte_op64_mem(OP_GROUP1_EvIz, GROUP1_OP_XOR, base, offset);
             self.formatter.immediate32(imm);
         }
     }
 
     pub fn xorq_rm(&mut self, src: u8, offset: i32, base: u8) {
         self.formatter
-            .two_byte_op64_mem(OP_XOR_EvGv, src, base, offset);
+            .one_byte_op64_mem(OP_XOR_EvGv, src, base, offset);
     }
 
     pub fn xorq_rm_scaled(&mut self, src: u8, offset: i32, base: u8, index: u8, scale: u8) {
         self.formatter
-            .two_byte_op64_mem_scaled(OP_XOR_EvGv, src, base, index, scale, offset);
+            .one_byte_op64_mem_scaled(OP_XOR_EvGv, src, base, index, scale, offset);
     }
 
     pub fn xorq_mr(&mut self, offset: i32, base: u8, dst: u8) {
         self.formatter
-            .two_byte_op64_mem(OP_XOR_GvEv, dst, base, offset);
+            .one_byte_op64_mem(OP_XOR_GvEv, dst, base, offset);
     }
 
     pub fn xorq_mr_scaled(&mut self, offset: i32, base: u8, index: u8, scale: u8, dst: u8) {
         self.formatter
-            .two_byte_op64_mem_scaled(OP_XOR_GvEv, dst, base, index, scale, offset);
+            .one_byte_op64_mem_scaled(OP_XOR_GvEv, dst, base, index, scale, offset);
     }
 
     pub fn lzcnt_rr(&mut self, src: u8, dst: u8) {
