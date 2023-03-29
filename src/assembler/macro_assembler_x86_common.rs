@@ -592,7 +592,9 @@ impl MacroAssemblerX86Common {
                 self.assembler.imull_rr(src2, dest);
             }
 
-            (Operand::Address(op1), Operand::Register(op2)) => {
+            (Operand::Address(op1), Operand::Register(op2))
+            | (Operand::Register(op2), Operand::Address(op1)) => {
+                println!("mul32 {}({}), {}, {}", op1.offset, op1.base, op2, dest);
                 if op2 == dest {
                     self.mul32(op1, dest);
                 } else if op1.base == dest {
@@ -619,12 +621,27 @@ impl MacroAssemblerX86Common {
         self.assembler.cdq();
     }
 
+    pub fn x86_convert_to_double_word32_rr(&mut self, src: u8, dest: u8) {
+        assert!(src == eax && dest == edx);
+        self.x86_convert_to_double_word32();
+    }
+
     pub fn x86div32(&mut self, denominator: u8) {
         self.assembler.idivl_r(denominator);
     }
 
+    pub fn x86div32_rrr(&mut self, ax: u8, dx: u8, denominator: u8) {
+        assert!(ax == eax && dx == edx);
+        self.x86div32(denominator);
+    }
+
     pub fn x86udiv32(&mut self, denominator: u8) {
         self.assembler.divl_r(denominator);
+    }
+
+    pub fn x86udiv32_rrr(&mut self, ax: u8, dx: u8, denominator: u8) {
+        assert!(ax == eax && dx == edx);
+        self.x86udiv32(denominator);
     }
 
     pub fn neg32(&mut self, op: impl Into<Operand>) {
@@ -1819,6 +1836,14 @@ impl MacroAssemblerX86Common {
         }
     }
 
+    pub fn move_zero_to_double(&mut self,dst: u8) {
+        self.assembler.xorps_rr(dst, dst);
+    }
+
+    pub fn move_zero_to_float(&mut self,dst: u8) {
+        self.assembler.xorps_rr(dst, dst);
+    }
+
     pub fn move_double(&mut self, src: u8, dst: u8) {
         if src == dst {
             return;
@@ -1942,6 +1967,10 @@ impl MacroAssemblerX86Common {
 
     pub fn add_double_rr(&mut self, src1: impl Into<Operand>, dest: u8) {
         self.add_double(src1.into(), dest, dest);
+    }
+
+    pub fn add_float_rr(&mut self, src1: impl Into<Operand>, dest: u8) {
+        self.add_float(src1.into(), dest, dest);
     }
 
     pub fn add_float(&mut self, src1: impl Into<Operand>, src2: impl Into<Operand>, dest: u8) {
@@ -2088,42 +2117,53 @@ impl MacroAssemblerX86Common {
         self.sub_float(dst, src, dst);
     }
 
-    pub fn mul_double(&mut self, op1: u8, op2: impl Into<Operand>, dst: u8) {
-        match op2.into() {
-            Operand::Register(op2) => {
-                if op1 == dst {
-                    self.assembler.mulsd_rr(op2, dst);
-                    return;
+    pub fn mul_double(&mut self, op1: impl Into<Operand>, op2: impl Into<Operand>, dst: u8) {
+        match (op1.into(), op2.into()) {
+            (Operand::Register(op1), op2) => match op2 {
+                Operand::Register(op2) => {
+                    if op1 == dst {
+                        self.assembler.mulsd_rr(op2, dst);
+                        return;
+                    }
+
+                    self.move_double(op2, dst);
+                    self.assembler.mulsd_rr(op1, dst)
                 }
 
-                self.move_double(op2, dst);
-                self.assembler.mulsd_rr(op1, dst)
+                Operand::Address(op2) => {
+                    if op1 == dst {
+                        self.assembler.mulsd_mr(op2.offset, op2.base, dst);
+                        return;
+                    }
+
+                    self.load_double(op2, dst);
+                    self.assembler.mulsd_rr(op1, dst);
+                }
+
+                Operand::BaseIndex(address) => {
+                    if op1 == dst {
+                        self.assembler.mulsd_mr_scaled(
+                            address.offset,
+                            address.base,
+                            address.index,
+                            address.scale as _,
+                            dst,
+                        );
+                        return;
+                    }
+
+                    self.load_double(address, dst);
+                    self.assembler.mulsd_rr(op1, dst);
+                }
+
+                op => unreachable!("{:?}", op),
+            },
+            (Operand::Address(op1), op2) => {
+                self.mul_double(op2, op1, dst);
             }
 
-            Operand::Address(op2) => {
-                if op1 == dst {
-                    self.assembler.mulsd_mr(op2.offset, op2.base, dst);
-                    return;
-                }
-
-                self.load_double(op2, dst);
-                self.assembler.mulsd_rr(op1, dst);
-            }
-
-            Operand::BaseIndex(address) => {
-                if op1 == dst {
-                    self.assembler.mulsd_mr_scaled(
-                        address.offset,
-                        address.base,
-                        address.index,
-                        address.scale as _,
-                        dst,
-                    );
-                    return;
-                }
-
-                self.load_double(address, dst);
-                self.assembler.mulsd_rr(op1, dst);
+            (Operand::BaseIndex(address), op2) => {
+                self.mul_double(op2, address, dst);
             }
 
             op => unreachable!("{:?}", op),
@@ -2134,42 +2174,56 @@ impl MacroAssemblerX86Common {
         self.mul_double(dst, src, dst);
     }
 
-    pub fn mul_float(&mut self, op1: u8, op2: impl Into<Operand>, dst: u8) {
-        match op2.into() {
-            Operand::Register(op2) => {
-                if op1 == dst {
-                    self.assembler.mulss_rr(op2, dst);
-                    return;
+    pub fn mul_float(&mut self, op1: impl Into<Operand>, op2: impl Into<Operand>, dst: u8) {
+        match (op1.into(), op2.into()) {
+            (Operand::Register(op1), op2) => match op2 {
+                Operand::Register(op2) => {
+                    if op1 == dst {
+                        self.assembler.mulss_rr(op2, dst);
+                        return;
+                    }
+
+                    self.move_double(op2, dst);
+                    self.assembler.mulss_rr(op1, dst)
                 }
 
-                self.move_double(op2, dst);
-                self.assembler.mulss_rr(op1, dst)
-            }
+                Operand::Address(op2) => {
+                    if op1 == dst {
+                        self.assembler.mulss_mr(op2.offset, op2.base, dst);
+                        return;
+                    }
 
-            Operand::Address(op2) => {
-                if op1 == dst {
-                    self.assembler.mulss_mr(op2.offset, op2.base, dst);
-                    return;
+                    self.load_double(op2, dst);
+                    self.assembler.mulss_rr(op1, dst);
                 }
 
-                self.load_double(op2, dst);
-                self.assembler.mulss_rr(op1, dst);
-            }
-
-            Operand::BaseIndex(address) => {
-                if op1 == dst {
-                    self.assembler.mulss_mr_scaled(
-                        address.offset,
-                        address.base,
-                        address.index,
-                        address.scale as _,
-                        dst,
-                    );
-                    return;
+                Operand::BaseIndex(address) => {
+                    if op1 == dst {
+                        self.assembler.mulss_mr_scaled(
+                            address.offset,
+                            address.base,
+                            address.index,
+                            address.scale as _,
+                            dst,
+                        );
+                        return;
+                    }
                 }
+
+                op => unreachable!("{:?}", op),
+            },
+
+            (Operand::Address(op1), op2) => {
+                self.mul_float(op2, op1, dst);
             }
 
-            op => unreachable!("{:?}", op),
+            (Operand::BaseIndex(address), op2) => {
+                self.mul_float(op2, address, dst);
+            }
+
+            op => {
+                unreachable!("{:?}", op)
+            }
         }
     }
 
@@ -2195,11 +2249,19 @@ impl MacroAssemblerX86Common {
         }
     }
 
+    pub fn and_float_rr(&mut self, src: u8, dst: u8) {
+        self.and_float(dst, src, dst);
+    }
+
     pub fn and_double_rr(&mut self, src: u8, dst: u8) {
         self.and_double(dst, src, dst);
     }
 
-    pub fn or_double(&mut self, src1: u8, src2: u8, dst: u8) {
+    pub fn or_double(&mut self, src: u8, dst: u8) {
+        self.assembler.orps_rr(src, dst);
+    }
+
+    pub fn or_double_rrr(&mut self, src1: u8, src2: u8, dst: u8) {
         if src1 == dst {
             self.assembler.orps_rr(src2, dst);
         } else {
@@ -2208,7 +2270,11 @@ impl MacroAssemblerX86Common {
         }
     }
 
-    pub fn or_float(&mut self, src1: u8, src2: u8, dst: u8) {
+    pub fn or_float(&mut self, src: u8, dst: u8) {
+        self.assembler.orps_rr(src, dst);
+    }
+
+    pub fn or_float_rrr(&mut self, src1: u8, src2: u8, dst: u8) {
         if src1 == dst {
             self.assembler.orps_rr(src2, dst);
         } else {
@@ -2226,6 +2292,10 @@ impl MacroAssemblerX86Common {
         }
     }
 
+    pub fn xor_float_rr(&mut self, src: u8, dst: u8) {
+        self.assembler.xorps_rr(src, dst);
+    }
+
     pub fn xor_float(&mut self, src1: u8, src2: u8, dst: u8) {
         if src1 == dst {
             self.assembler.xorps_rr(src2, dst);
@@ -2233,6 +2303,10 @@ impl MacroAssemblerX86Common {
             self.move_double(src2, dst);
             self.assembler.xorps_rr(src1, dst);
         }
+    }
+
+    pub fn xor_double_rr(&mut self, src: u8, dst: u8) {
+        self.xor_double(dst, src, dst);
     }
 
     pub fn convert_int32_to_double(&mut self, src: impl Into<Operand>, dst: u8) {
@@ -2243,12 +2317,23 @@ impl MacroAssemblerX86Common {
                 self.assembler.cvtsi2sd_rr(Self::SCRATCH_REGISTER, dst);
             }
 
+            Operand::Address(addr) => {
+                self.assembler.cvtsi2sd_mr(addr.offset, addr.base, dst);
+            }
+
             _ => unreachable!(),
         }
     }
 
-    pub fn convert_int32_to_float(&mut self, src: u8, dst: u8) {
-        self.assembler.cvtsi2ss_rr(src, dst);
+    pub fn convert_int32_to_float(&mut self, src: impl Into<Operand>, dst: u8) {
+        match src.into() {
+            Operand::Register(src) => self.assembler.cvtsi2ss_rr(src, dst),
+            Operand::Address(addr) => {
+                self.assembler.cvtsi2ss_mr(addr.offset, addr.base, dst);
+            }
+
+            op => unreachable!("{:?}", op),
+        }
     }
 
     pub fn branch_double(&mut self, cond: DoubleCondition, left: u8, right: u8) -> Jump {
@@ -3335,6 +3420,16 @@ impl MacroAssemblerX86Common {
         self.assembler.nop();
     }
 
+    pub fn test32_rrr(
+        &mut self,
+        cond: ResultCondition,
+        src: impl Into<Operand>,
+        mask: impl Into<Operand>,
+        dest: u8,
+    ) {
+        self.test32_cond(cond, src, mask, dest);
+    }
+
     pub fn test32_cond(
         &mut self,
         cond: ResultCondition,
@@ -3359,6 +3454,277 @@ impl MacroAssemblerX86Common {
             }
             _ => todo!(),
         }
+    }
+
+    pub fn store_fence(&mut self) {}
+    pub fn load_fence(&mut self) {}
+
+    pub fn move_float_to32(&mut self, src: u8, dst: u8) {
+        self.assembler.movd_f2r(src, dst);
+    }
+
+    pub fn move_double_conditionally32(
+        &mut self,
+        cond: RelationalCondition,
+        left: impl Into<Operand>,
+        right: impl Into<Operand>,
+        then_case: u8,
+        mut else_case: u8,
+        dest: u8,
+    ) {
+        if then_case != dest && else_case != dest {
+            self.move_double(else_case, dest);
+            else_case = dest;
+        }
+
+        if else_case == dest {
+            let false_case = self.branch32(Self::invert(cond), left, right);
+            self.move_double(then_case, dest);
+            false_case.link(self);
+        } else {
+            let true_case = self.branch32(cond, left, right);
+            self.move_double(else_case, dest);
+            true_case.link(self);
+        }
+    }
+
+    pub fn move_double_conditionally32_rrr(
+        &mut self,
+        cond: RelationalCondition,
+        left: impl Into<Operand>,
+        right: impl Into<Operand>,
+        then_case: u8,
+        else_case: u8,
+        dest: u8,
+    ) {
+        self.move_double_conditionally32(cond, left, right, then_case, else_case, dest)
+    }
+
+    pub fn move_double_conditionally64(
+        &mut self,
+        cond: RelationalCondition,
+        left: impl Into<Operand>,
+        right: impl Into<Operand>,
+        then_case: u8,
+        mut else_case: u8,
+        dest: u8,
+    ) {
+        if then_case != dest && else_case != dest {
+            self.move_double(else_case, dest);
+            else_case = dest;
+        }
+
+        if else_case == dest {
+            let false_case = self.branch64(Self::invert(cond), left, right);
+            self.move_double(then_case, dest);
+            false_case.link(self);
+        } else {
+            let true_case = self.branch64(cond, left, right);
+            self.move_double(else_case, dest);
+            true_case.link(self);
+        }
+    }
+
+    pub fn move_double_conditionally64_rrr(
+        &mut self,
+        cond: RelationalCondition,
+        left: impl Into<Operand>,
+        right: impl Into<Operand>,
+        then_case: u8,
+        else_case: u8,
+        dest: u8,
+    ) {
+        self.move_double_conditionally64(cond, left, right, then_case, else_case, dest)
+    }
+
+    pub fn move_double_conditionally_float(
+        &mut self,
+        cond: DoubleCondition,
+        left: u8,
+        right: u8,
+        then_case: u8,
+        else_case: u8,
+        dest: u8,
+    ) {
+        if else_case == dest {
+            let false_case = self.branch_float(Self::invert_fp(cond), left, right);
+            self.move_double(then_case, dest);
+            false_case.link(self);
+        } else if then_case == dest {
+            let true_case = self.branch_float(cond, left, right);
+            self.move_double(else_case, dest);
+            true_case.link(self);
+        } else {
+            let true_case = self.branch_float(cond, left, right);
+            self.move_double(else_case, dest);
+            let false_case = self.jump();
+            true_case.link(self);
+            self.move_double(then_case, dest);
+            false_case.link(self);
+        }
+    }
+
+    pub fn move_double_conditionally_float_rrr(
+        &mut self,
+        cond: DoubleCondition,
+        left: u8,
+        right: u8,
+        then_case: u8,
+        else_case: u8,
+        dest: u8,
+    ) {
+        if else_case == dest {
+            let false_case = self.branch_float(Self::invert_fp(cond), left, right);
+            self.move_double(then_case, dest);
+            false_case.link(self);
+        } else if then_case == dest {
+            let true_case = self.branch_float(cond, left, right);
+            self.move_double(else_case, dest);
+            true_case.link(self);
+        } else {
+            let true_case = self.branch_float(cond, left, right);
+            self.move_double(else_case, dest);
+            let false_case = self.jump();
+            true_case.link(self);
+            self.move_double(then_case, dest);
+            false_case.link(self);
+        }
+    }
+
+    pub fn move_double_conditionally_double(
+        &mut self,
+        cond: DoubleCondition,
+        left: u8,
+        right: u8,
+        then_case: u8,
+        else_case: u8,
+        dest: u8,
+    ) {
+        if else_case == dest {
+            let false_case = self.branch_double(Self::invert_fp(cond), left, right);
+            self.move_double(then_case, dest);
+            false_case.link(self);
+        } else if then_case == dest {
+            let true_case = self.branch_double(cond, left, right);
+            self.move_double(else_case, dest);
+            true_case.link(self);
+        } else {
+            let true_case = self.branch_double(cond, left, right);
+            self.move_double(else_case, dest);
+            let false_case = self.jump();
+            true_case.link(self);
+            self.move_double(then_case, dest);
+            false_case.link(self);
+        }
+    }
+
+    pub fn move_double_conditionally_double_rrr(
+        &mut self,
+        cond: DoubleCondition,
+        left: u8,
+        right: u8,
+        then_case: u8,
+        else_case: u8,
+        dest: u8,
+    ) {
+        if else_case == dest {
+            let false_case = self.branch_double(Self::invert_fp(cond), left, right);
+            self.move_double(then_case, dest);
+            false_case.link(self);
+        } else if then_case == dest {
+            let true_case = self.branch_double(cond, left, right);
+            self.move_double(else_case, dest);
+            true_case.link(self);
+        } else {
+            let true_case = self.branch_double(cond, left, right);
+            self.move_double(else_case, dest);
+            let false_case = self.jump();
+            true_case.link(self);
+            self.move_double(then_case, dest);
+            false_case.link(self);
+        }
+    }
+
+    pub fn move_double_conditionally_test32(
+        &mut self,
+        cond: ResultCondition,
+        test: impl Into<Operand>,
+        mask: impl Into<Operand>,
+        then_case: u8,
+        else_case: u8,
+        dest: u8,
+    ) {
+        let test = test.into();
+        let mask = mask.into();
+        if else_case == dest && Self::is_invertible(cond) {
+            let false_case = self.branch_test32(Self::invert_result(cond), test, mask);
+            self.move_double(then_case, dest);
+            false_case.link(self);
+        } else if then_case == dest {
+            let true_case = self.branch_test32(cond, test, mask);
+            self.move_double(else_case, dest);
+            true_case.link(self);
+        }
+
+        let true_case = self.branch_test32(cond, test, mask);
+        self.move_double(else_case, dest);
+        let false_case = self.jump();
+        true_case.link(self);
+        self.move_double(then_case, dest);
+        false_case.link(self);
+    }
+
+    pub fn move_double_conditionally_test32_rrr(
+        &mut self,
+        cond: ResultCondition,
+        test: impl Into<Operand>,
+        mask: impl Into<Operand>,
+        then_case: u8,
+        else_case: u8,
+        dest: u8,
+    ) {
+        self.move_double_conditionally_test32(cond, test, mask, then_case, else_case, dest)
+    }
+
+    pub fn move_double_conditionally_test64(
+        &mut self,
+        cond: ResultCondition,
+        test: impl Into<Operand>,
+        mask: impl Into<Operand>,
+        then_case: u8,
+        else_case: u8,
+        dest: u8,
+    ) {
+        let test = test.into();
+        let mask = mask.into();
+        if else_case == dest && Self::is_invertible(cond) {
+            let false_case = self.branch_test64(Self::invert_result(cond), test, mask);
+            self.move_double(then_case, dest);
+            false_case.link(self);
+        } else if then_case == dest {
+            let true_case = self.branch_test64(cond, test, mask);
+            self.move_double(else_case, dest);
+            true_case.link(self);
+        }
+
+        let true_case = self.branch_test64(cond, test, mask);
+        self.move_double(else_case, dest);
+        let false_case = self.jump();
+        true_case.link(self);
+        self.move_double(then_case, dest);
+        false_case.link(self);
+    }
+
+    pub fn move_double_conditionally_test64_rrr(
+        &mut self,
+        cond: ResultCondition,
+        test: impl Into<Operand>,
+        mask: impl Into<Operand>,
+        then_case: u8,
+        else_case: u8,
+        dest: u8,
+    ) {
+        self.move_double_conditionally_test64(cond, test, mask, then_case, else_case, dest)
     }
 
     pub fn move_conditionally_double(
@@ -3598,7 +3964,7 @@ impl MacroAssemblerX86Common {
                 .testl_i32m(mask, address.offset, address.base);
         }
     }
-
+    #[allow(dead_code)]
     fn clz32_after_bsr(&mut self, dst: u8) {
         let src_is_non_zero =
             Jump::new(self.assembler.jcc(ResultCondition::NotZero.x86_condition()));

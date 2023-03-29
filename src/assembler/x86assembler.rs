@@ -1674,7 +1674,7 @@ impl X86Assembler {
     }
 
     pub fn cmpl_rr(&mut self, src: u8, dst: u8) {
-        self.formatter.one_byte_op_rm(OP_CMP_EvGv, dst, src);
+        self.formatter.one_byte_op_rm(OP_CMP_EvGv, src, dst);
     }
 
     pub fn cmpl_rm(&mut self, src: u8, offset: i32, base: u8) {
@@ -3119,23 +3119,23 @@ impl X86Assembler {
             .two_byte_op_mem_scaled(OP2_ADDSD_VsdWsd, dst, base, index, scale, offset);
     }
 
-    pub fn cvtsi2sd_rr(&mut self, dst: u8, src: u8) {
+    pub fn cvtsi2sd_rr(&mut self, src: u8, dst: u8) {
         self.formatter.prefix(PRE_SSE_F2);
         self.formatter.two_byte_op_rm(OP2_CVTSI2SD_VsdEd, dst, src);
     }
 
-    pub fn cvtsi2ss_rr(&mut self, dst: u8, src: u8) {
+    pub fn cvtsi2ss_rr(&mut self, src: u8, dst: u8) {
         self.formatter.prefix(PRE_SSE_F3);
         self.formatter.two_byte_op_rm(OP2_CVTSI2SD_VsdEd, dst, src);
     }
 
-    pub fn cvtsi2sdq_rr(&mut self, dst: u8, src: u8) {
+    pub fn cvtsi2sdq_rr(&mut self, src: u8, dst: u8) {
         self.formatter.prefix(PRE_SSE_F2);
         self.formatter
             .two_byte_op64_rm(OP2_CVTSI2SD_VsdEd, dst, src);
     }
 
-    pub fn cvtsi2ssq_rr(&mut self, dst: u8, src: u8) {
+    pub fn cvtsi2ssq_rr(&mut self, src: u8, dst: u8) {
         self.formatter.prefix(PRE_SSE_F3);
         self.formatter
             .two_byte_op64_rm(OP2_CVTSI2SD_VsdEd, dst, src);

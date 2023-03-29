@@ -1,7 +1,7 @@
 use super::{
     abstract_macro_assembler::{
-        Address, BaseIndex, ConvertibleLoadLabel, DataLabel32, DataLabelCompact, DataLabelPtr,
-        Extend, Jump, Operand, PatchableJump, Scale, Call,
+        Address, BaseIndex, Call, ConvertibleLoadLabel, DataLabel32, DataLabelCompact,
+        DataLabelPtr, Extend, Jump, Operand, PatchableJump, Scale,
     },
     macro_assembler_x86_common::*,
     x86assembler::*,
@@ -18,10 +18,12 @@ pub const fn can_sign_extend_32_64(x: i64) -> bool {
 }
 
 impl MacroAssemblerX86Common {
-
     pub fn call(&mut self) -> Call {
         let label = self.move_with_patch(0i64, Self::SCRATCH_REGISTER);
-        let result = Call::new(self.assembler.call_r(Self::SCRATCH_REGISTER), Call::LINKABLE);
+        let result = Call::new(
+            self.assembler.call_r(Self::SCRATCH_REGISTER),
+            Call::LINKABLE,
+        );
         assert!(result.label.offset - label.label.offset == 3);
         result
     }
@@ -646,12 +648,32 @@ impl MacroAssemblerX86Common {
         self.assembler.cqo();
     }
 
+    pub fn x86_convert_to_quad_word64_rr(&mut self, src: u8, dst: u8) {
+        assert!(src == eax);
+        assert!(dst == edx);
+
+        self.x86_convert_to_quad_word64();
+    }
+
     pub fn x86div64(&mut self, denominator: u8) {
         self.assembler.idivq_r(denominator);
     }
 
+    pub fn x86div64_rrr(&mut self, rax: u8, rdx: u8, denominator: u8) {
+        assert!(rax == eax);
+        assert!(rdx == edx);
+        self.x86div64(denominator);
+    }
+
     pub fn x86udiv64(&mut self, denominator: u8) {
         self.assembler.divq_r(denominator);
+    }
+
+    pub fn x86udiv64_rrr(&mut self, rax: u8, rdx: u8, denominator: u8) {
+        assert!(rax == eax);
+        assert!(rdx == edx);
+        self.x86udiv64(denominator);
+
     }
 
     pub fn neg64(&mut self, src_dest: impl Into<Operand>) {
@@ -1221,6 +1243,11 @@ impl MacroAssemblerX86Common {
         }
     }
 
+    pub fn branch_neg64(&mut self, cond: ResultCondition, src_dest: u8) -> Jump {
+        self.neg64(src_dest);
+        Jump::new(self.assembler.jcc(cond.x86_condition()))
+    }
+
     pub fn branch64(
         &mut self,
         cond: RelationalCondition,
@@ -1532,11 +1559,23 @@ impl MacroAssemblerX86Common {
         &mut self,
         cond: RelationalCondition,
         left: u8,
-        right: u8,
+        right: impl Into<Operand>,
         then_case: u8,
         mut else_case: u8,
         dest: u8,
     ) {
+        let right = match right.into() {
+            Operand::Register(reg) => reg,
+            Operand::Imm32(imm) => {
+                return self.move_conditionally64_imm_then_else(
+                    cond, left, imm, then_case, else_case, dest,
+                )
+            }
+            op => unreachable!(
+                "move_conditionally64_then_else: {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}",
+                cond, left, op, then_case, else_case, dest, op
+            ),
+        };
         self.assembler.cmpq_rr(right, left);
         if then_case != dest && else_case != dest {
             self.mov(else_case, dest);
@@ -1576,23 +1615,52 @@ impl MacroAssemblerX86Common {
         &mut self,
         cond: ResultCondition,
         left: u8,
-        right: u8,
+        right: impl Into<Operand>,
         src: u8,
         dest: u8,
     ) {
-        self.assembler.testq_rr(right, left);
-        self.cmov(cond.x86_condition(), src, dest);
+        match right.into() {
+            Operand::Register(right) => {
+                self.assembler.testq_rr(right, left);
+                self.cmov(cond.x86_condition(), src, dest);
+            }
+            Operand::Imm32(right) => {
+                if right == -1 {
+                    self.assembler.testq_rr(left, left);
+                } else if (right & !0x7f) == 0 {
+                    self.assembler.testb_i8r(right, left);
+                } else {
+                    self.assembler.testq_i32r(right, left);
+                }
+
+                self.cmov(cond.x86_condition(), src, dest);
+            }
+
+            op => unreachable!(
+                "move_conditionally_test64: {:?}, {:?}, {:?}, {:?}, {:?}, {:?}",
+                cond, left, op, src, dest, op
+            ),
+        }
     }
 
     pub fn move_conditionally_test64_then_else(
         &mut self,
         cond: ResultCondition,
         left: u8,
-        right: u8,
+        right: impl Into<Operand>,
         then_case: u8,
         mut else_case: u8,
         dest: u8,
     ) {
+        let right = match right.into() {
+            Operand::Register(reg) => reg,
+            Operand::Imm32(imm) => {
+                return self.move_conditionally_test64_imm_then_else(
+                    cond, left, imm, then_case, else_case, dest,
+                )
+            }
+            x => unreachable!("invalid operand: {:?}", x),
+        };
         self.assembler.testq_rr(right, left);
         if then_case != dest && else_case != dest {
             self.mov(else_case, dest);
@@ -1758,5 +1826,21 @@ impl MacroAssemblerX86Common {
 
     pub fn truncate_float_to_int64(&mut self, src: u8, dest: u8) {
         self.assembler.cvtss2siq_rr(src, dest)
+    }
+
+    pub fn convert_int64_to_double(&mut self, src: impl Into<Operand>, dest: u8) {
+        match src.into() {
+            Operand::Register(reg) => self.assembler.cvtsi2sdq_rr(reg, dest),
+            Operand::Address(address) => self.assembler.cvtsi2sdq_mr(address.offset, address.base, dest),
+            op => unreachable!("Unexpected operand: {:?}", op),
+        }
+    }
+
+    pub fn convert_int64_to_float(&mut self, src: impl Into<Operand>, dest: u8) {
+        match src.into() {
+            Operand::Register(reg) => self.assembler.cvtsi2ssq_rr(reg, dest),
+            Operand::Address(address) => self.assembler.cvtsi2ssq_mr(address.offset, address.base, dest),
+            op => unreachable!("Unexpected operand: {:?}", op),
+        }
     }
 }

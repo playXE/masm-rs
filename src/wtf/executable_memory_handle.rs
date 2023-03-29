@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use crate::assembler::assembly_comments::AssemblyCommentsRegistry;
+
 use super::virtual_memory::VirtualMemory;
 
 
@@ -30,6 +32,12 @@ impl ExecutableMemoryHandle {
 
     pub fn end(&self) -> *mut u8 {
         self.vmem.end() as _
+    }
+}
+
+impl Drop for ExecutableMemoryHandle {
+    fn drop(&mut self) {
+        AssemblyCommentsRegistry::singleton().unregister_code_range(self.vmem.start() as _, self.vmem.end() as _);
     }
 }
 
@@ -85,12 +93,4 @@ pub trait Function<R, A> {
     fn call(&self, args: A) -> R;
 }
 
-
-macro_rules! as_func {
-    ($this: expr, $typ: ty) => {
-        unsafe {
-            std::mem::transmute::<*mut u8, $typ>($this.start())
-        }
-    };
-}
 
