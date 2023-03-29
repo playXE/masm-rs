@@ -34,6 +34,7 @@ pub fn try_to_disassemble<W: std::fmt::Write>(code: *const u8, size: usize, pref
         let mut decoder = Decoder::with_ip(64, code, code.as_ptr() as _, DecoderOptions::NONE);
 
         let mut formatter = GasFormatter::new();
+        formatter.options_mut().set_gas_show_mnemonic_size_suffix(true);
         formatter.options_mut().set_uppercase_hex(false);
         for instruction in &mut decoder {
 

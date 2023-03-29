@@ -3085,7 +3085,7 @@ impl X86Assembler {
 
     // SSE Operations:
 
-    pub fn addsd_rr(&mut self, dst: u8, src: u8) {
+    pub fn addsd_rr(&mut self, src: u8, dst: u8) {
         self.formatter.prefix(PRE_SSE_F2);
         self.formatter.two_byte_op_rm(OP2_ADDSD_VsdWsd, dst, src);
     }
@@ -3102,7 +3102,7 @@ impl X86Assembler {
             .two_byte_op_mem_scaled(OP2_ADDSD_VsdWsd, dst, base, index, scale, offset);
     }
 
-    pub fn addss_rr(&mut self, dst: u8, src: u8) {
+    pub fn addss_rr(&mut self, src: u8, dst: u8) {
         self.formatter.prefix(PRE_SSE_F3);
         self.formatter.two_byte_op_rm(OP2_ADDSD_VsdWsd, dst, src);
     }
