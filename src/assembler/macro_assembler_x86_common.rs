@@ -1753,13 +1753,16 @@ impl MacroAssemblerX86Common {
                 address.scale as _,
             ),
 
-            (Operand::Register(src), Operand::BaseIndex(address)) => self.assembler.movb_rm_scaled(
-                src,
-                address.offset,
-                address.base,
-                address.index,
-                address.scale as _,
-            ),
+            (Operand::Register(src), Operand::BaseIndex(address)) => {
+                
+                self.assembler.movb_rm_scaled(
+                    src,
+                    address.offset,
+                    address.base,
+                    address.index,
+                    address.scale as _,
+                );
+            }
 
             (Operand::Register(src), Operand::Address(address)) => {
                 self.assembler.movb_rm(src, address.offset, address.base)
@@ -1836,11 +1839,11 @@ impl MacroAssemblerX86Common {
         }
     }
 
-    pub fn move_zero_to_double(&mut self,dst: u8) {
+    pub fn move_zero_to_double(&mut self, dst: u8) {
         self.assembler.xorps_rr(dst, dst);
     }
 
-    pub fn move_zero_to_float(&mut self,dst: u8) {
+    pub fn move_zero_to_float(&mut self, dst: u8) {
         self.assembler.xorps_rr(dst, dst);
     }
 

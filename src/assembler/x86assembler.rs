@@ -1220,18 +1220,18 @@ impl X86Assembler {
     pub fn subq_im(&mut self, imm: i32, offset: i32, base: u8) {
         if can_sign_extend_8_32(imm) {
             self.formatter
-                .two_byte_op64_mem(OP_GROUP1_EvIb, GROUP1_OP_SUB, base, offset);
+                .one_byte_op64_mem(OP_GROUP1_EvIb, GROUP1_OP_SUB, base, offset);
             self.formatter.immediate8(imm);
         } else {
             self.formatter
-                .two_byte_op64_mem(OP_GROUP1_EvIz, GROUP1_OP_SUB, base, offset);
+                .one_byte_op64_mem(OP_GROUP1_EvIz, GROUP1_OP_SUB, base, offset);
             self.formatter.immediate32(imm);
         }
     }
 
     pub fn subq_im_scaled(&mut self, imm: i32, offset: i32, base: u8, index: u8, scale: u8) {
         if can_sign_extend_8_32(imm) {
-            self.formatter.two_byte_op64_mem_scaled(
+            self.formatter.one_byte_op64_mem_scaled(
                 OP_GROUP1_EvIb,
                 GROUP1_OP_SUB,
                 base,
@@ -1241,7 +1241,7 @@ impl X86Assembler {
             );
             self.formatter.immediate8(imm);
         } else {
-            self.formatter.two_byte_op64_mem_scaled(
+            self.formatter.one_byte_op64_mem_scaled(
                 OP_GROUP1_EvIz,
                 GROUP1_OP_SUB,
                 base,
@@ -3054,6 +3054,7 @@ impl X86Assembler {
     }
 
     pub fn jae(&mut self) -> AssemblerLabel {
+       
         self.formatter.two_byte_op(jcc_rel32(Condition::AE));
         self.formatter.immediate_rel32()
     }
@@ -5595,7 +5596,7 @@ impl X86InstructionFormatter {
         offset: i32,
     ) {
         let mut writer = SingleInstructionBufferWriter::new(&mut self.buffer);
-        writer.emit_rex_if(Self::byte_reg_requires_rex(reg), reg, index, base);
+        writer.emit_rex_if(Self::byte_reg_requires_rex(reg) || Self::reg_requires_rex_2(index, base), reg, index, base);
         writer.put_byte_unchecked(op as _);
         writer.memory_modrm_scaled(reg, base, index, scale, offset);
     }
@@ -5806,7 +5807,7 @@ impl<'a> SingleInstructionBufferWriter<'a> {
     }
 
     pub fn memory_modrm_scaled(&mut self, reg: u8, base: u8, index: u8, scale: u8, offset: i32) {
-        if offset == 0 {
+        if offset == 0 && (base != Self::NO_BASE && base != Self::NO_BASE2) {
             self.put_modrm_sib(MOD_RM_MEM_NO_DISP, reg, base, index, scale);
         } else if can_sign_extend_8_32(offset) {
             self.put_modrm_sib(MOD_RM_MEM_DISP8, reg, base, index, scale);
