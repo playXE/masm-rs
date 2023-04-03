@@ -6,6 +6,8 @@ pub mod link_buffer;
 pub mod assembly_comments;
 pub mod disassembler;
 
+use std::mem::size_of;
+
 use cfg_if::*;
 
 use self::abstract_macro_assembler::Address;
@@ -78,5 +80,23 @@ impl TargetMacroAssembler {
 
     pub fn lea64(&mut self, address: Address, dest: u8) {
         self.add64_rrr(address.offset, address.base, dest);
+    }
+
+    pub fn push_to_save_gpr(&mut self, src: u8) {
+        self.push(src);
+    }
+
+    pub fn push_to_save_fpr(&mut self, src: u8) {
+        self.sub64(size_of::<f64>() as i32, Self::STACK_POINTER_REGISTER);
+        self.store_double(src, Address::new(Self::STACK_POINTER_REGISTER, 0));
+    }
+
+    pub fn pop_to_restore_gpr(&mut self, dest: u8) {
+        self.pop(dest);
+    }
+
+    pub fn pop_to_restore_fpr(&mut self, dest: u8) {
+        self.load_double(Address::new(Self::STACK_POINTER_REGISTER, 0), dest);
+        self.add64(size_of::<f64>() as i32, Self::STACK_POINTER_REGISTER);
     }
 }

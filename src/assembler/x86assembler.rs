@@ -1071,14 +1071,14 @@ impl X86Assembler {
     pub fn subl_ir(&mut self, imm: i32, dst: u8) {
         if can_sign_extend_8_32(imm) {
             self.formatter
-                .two_byte_op_rm(OP_GROUP1_EvIb, GROUP1_OP_SUB, dst);
+                .one_byte_op_rm(OP_GROUP1_EvIb, GROUP1_OP_SUB, dst);
             self.formatter.immediate8(imm);
         } else {
             if dst == eax {
                 self.formatter.one_byte_op(OP_SUB_EAXIv);
             } else {
                 self.formatter
-                    .two_byte_op_rm(OP_GROUP1_EvIz, GROUP1_OP_SUB, dst);
+                    .one_byte_op_rm(OP_GROUP1_EvIz, GROUP1_OP_SUB, dst);
             }
 
             self.formatter.immediate32(imm);
@@ -1377,7 +1377,7 @@ impl X86Assembler {
     }
 
     pub fn xorq_rr(&mut self, src: u8, dst: u8) {
-        self.formatter.two_byte_op64_rm(OP_XOR_EvGv, src, dst);
+        self.formatter.one_byte_op64_rm(OP_XOR_EvGv, src, dst);
     }
 
     pub fn xorq_ir(&mut self, imm: i32, dst: u8) {
@@ -3054,7 +3054,6 @@ impl X86Assembler {
     }
 
     pub fn jae(&mut self) -> AssemblerLabel {
-       
         self.formatter.two_byte_op(jcc_rel32(Condition::AE));
         self.formatter.immediate_rel32()
     }
@@ -4768,15 +4767,15 @@ impl X86Assembler {
     // code has been finalized it is (platform support permitting) within a non-
     // writable region of memory; to modify the code in an execute-only execuable
     // pool the 'repatch' and 'relink' methods should be used.
-    unsafe fn set_pointer(where_: *mut u8, value: *mut u8) {
+    pub unsafe fn set_pointer(where_: *mut u8, value: *mut u8) {
         where_.cast::<*mut u8>().sub(1).write_unaligned(value);
     }
 
-    unsafe fn set_int32(where_: *mut u8, value: i32) {
+    pub unsafe fn set_int32(where_: *mut u8, value: i32) {
         where_.cast::<i32>().sub(1).write_unaligned(value);
     }
 
-    unsafe fn set_rel32(from: *mut u8, to: *mut u8) {
+    pub unsafe fn set_rel32(from: *mut u8, to: *mut u8) {
         let offset = to.offset_from(from) as i32;
         Self::set_int32(from, offset);
     }
@@ -5596,7 +5595,12 @@ impl X86InstructionFormatter {
         offset: i32,
     ) {
         let mut writer = SingleInstructionBufferWriter::new(&mut self.buffer);
-        writer.emit_rex_if(Self::byte_reg_requires_rex(reg) || Self::reg_requires_rex_2(index, base), reg, index, base);
+        writer.emit_rex_if(
+            Self::byte_reg_requires_rex(reg) || Self::reg_requires_rex_2(index, base),
+            reg,
+            index,
+            base,
+        );
         writer.put_byte_unchecked(op as _);
         writer.memory_modrm_scaled(reg, base, index, scale, offset);
     }
