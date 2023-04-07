@@ -9,9 +9,11 @@ edition = "2021"
 cfg-if = "1.0.0"
 tinyvec = { version = "1.6", features = ["alloc"] }
 libc = "0.2"
-iced-x86 = "1.13"
+iced-x86 = { versions = "1.13", features = ["decoder", "no_std", "gas"], default-features = false }
 parking_lot = "0.12"
 once_cell = "1.17"
 num-traits = "0.2"
 errno = "0.3"
+
+[dev-dependencies]
 pico-args = "0.5"

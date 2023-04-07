@@ -594,7 +594,7 @@ impl MacroAssemblerX86Common {
 
             (Operand::Address(op1), Operand::Register(op2))
             | (Operand::Register(op2), Operand::Address(op1)) => {
-                println!("mul32 {}({}), {}, {}", op1.offset, op1.base, op2, dest);
+              
                 if op2 == dest {
                     self.mul32(op1, dest);
                 } else if op1.base == dest {
