@@ -3230,7 +3230,7 @@ impl X86Assembler {
 
     pub fn movq_f2r(&mut self, src: u8, dst: u8) {
         self.formatter.prefix(PRE_SSE_66);
-        self.formatter.two_byte_op64_rm(OP2_MOVD_VdEd, dst, src);
+        self.formatter.two_byte_op64_rm(OP2_MOVD_VdEd, src, dst);
     }
 
     pub fn movq_r2f(&mut self, src: u8, dst: u8) {
