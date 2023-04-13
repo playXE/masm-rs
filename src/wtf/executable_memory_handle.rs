@@ -1,24 +1,24 @@
 use std::sync::Arc;
 
-use crate::assembler::assembly_comments::AssemblyCommentsRegistry;
+use vm_allocator::RangeInclusive;
 
-use super::virtual_memory::VirtualMemory;
+use crate::{assembler::assembly_comments::AssemblyCommentsRegistry, jit::free_executable_memory};
+
 
 
 pub struct ExecutableMemoryHandle {
-    vmem: VirtualMemory,
-    size: usize,
+    vmem: RangeInclusive,
 }
 
 impl ExecutableMemoryHandle {
-    pub(crate) fn new(vmem: VirtualMemory, size: usize) -> Arc<Self> {
-        Arc::new(ExecutableMemoryHandle { vmem, size })
+    pub(crate) fn new(vmem: RangeInclusive) -> Arc<Self> {
+        Arc::new(ExecutableMemoryHandle { vmem })
     }
 
     pub fn contains(&self, address: *const u8) -> bool {
         let start = self.vmem.start();
         let end = self.vmem.end();
-        let address = address as usize;
+        let address = address as u64;
         address >= start && address < end
     }
 
@@ -27,7 +27,7 @@ impl ExecutableMemoryHandle {
     }
 
     pub fn size_in_bytes(&self) -> usize {
-        self.size
+        (self.vmem.end() - self.vmem.start()) as usize
     }
 
     pub fn end(&self) -> *mut u8 {
@@ -38,6 +38,7 @@ impl ExecutableMemoryHandle {
 impl Drop for ExecutableMemoryHandle {
     fn drop(&mut self) {
         AssemblyCommentsRegistry::singleton().unregister_code_range(self.vmem.start() as _, self.vmem.end() as _);
+        free_executable_memory(self.vmem);
     }
 }
 

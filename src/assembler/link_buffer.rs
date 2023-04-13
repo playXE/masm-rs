@@ -4,8 +4,7 @@ use crate::{
     assembler::abstract_macro_assembler::Call,
     wtf::{
         executable_memory_handle::{ExecutableMemoryHandle, CodeRef},
-        virtual_memory::{PlatformVirtualMemory, VirtualMemory},
-    },
+    }, jit::allocate_executable_memory,
 };
 
 use super::{
@@ -250,22 +249,12 @@ impl LinkBuffer {
             initial_size = macro_assembler.code_size();
         }
 
-        let memory = VirtualMemory::<PlatformVirtualMemory>::allocate_aligned(
-            crate::wtf::round_up_usize(
-                initial_size,
-                VirtualMemory::<PlatformVirtualMemory>::page_size(),
-                0,
-            ),
-            VirtualMemory::<PlatformVirtualMemory>::page_size(),
-            true,
-            "code",
-        )
-        .unwrap();
+        let memory = allocate_executable_memory(initial_size, 16);
 
-        self.size = memory.size();
+        self.size = (memory.end() - memory.start()) as usize;
         self.did_allocate = true;
         self.code = memory.start() as _;
-        self.executable_memory = Some(ExecutableMemoryHandle::new(memory, initial_size));
+        self.executable_memory = Some(ExecutableMemoryHandle::new(memory));
       
     }
 

@@ -255,7 +255,7 @@ fn main() {
 
     let code = jit.translate(disasm, &std::fs::read_to_string(input).unwrap());
 
-    println!("{}", code.disassembly());
+   
 
     println!("Compiled in {:.2}ms", compile_start.elapsed().as_micros() as f64 / 1000.0);
 
