@@ -6,6 +6,7 @@ pub mod link_buffer;
 pub mod assembly_comments;
 pub mod disassembler;
 
+
 use std::mem::size_of;
 
 use cfg_if::*;
@@ -23,12 +24,20 @@ cfg_if! {
 
         pub type TargetAssembler = x86assembler::X86Assembler;
         pub type TargetMacroAssembler = macro_assembler_x86_common::MacroAssemblerX86Common;
+    } else if #[cfg(target_arch="riscv64")] {
+        #[macro_use]
+        pub mod riscv64_registers;
+        pub mod riscv64assembler;
+        pub mod macro_assembler_riscv64;
+        pub mod riscv64disassembler;
+        pub type TargetAssembler = riscv64assembler::RISCV64Assembler;
+        pub type TargetMacroAssembler = macro_assembler_riscv64::MacroAssemblerRISCV64;
     } else {
         compile_error!("Unsupported architecture");
     }
 }
 
-
+#[cfg(target_arch="x86_64")]
 impl TargetMacroAssembler {
     pub fn ret32(&mut self, _: u8) {
         self.ret();

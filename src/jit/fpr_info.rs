@@ -1,9 +1,10 @@
 use cfg_if::cfg_if;
 
-use crate::assembler::x86assembler::*;
 
 cfg_if! {
     if #[cfg(target_arch="x86_64")] {
+
+        use crate::assembler::x86assembler::*;
         pub const NUMBER_OF_REGISTERS: usize = 6;
         pub const NUMBER_OF_ARGUMENT_REGISTERS: usize = 8;
 

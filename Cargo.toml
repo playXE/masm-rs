@@ -13,8 +13,10 @@ iced-x86 = { version = "1.13", features = ["decoder", "no_std", "gas"], default-
 parking_lot = "0.12"
 once_cell = "1.17"
 num-traits = "0.2"
+paste = "1.0"
 errno = "0.3"
 vm-allocator = "0.1"
+num = "0.4"
 
 [dev-dependencies]
 pico-args = "0.5"

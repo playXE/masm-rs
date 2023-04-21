@@ -1,3 +1,5 @@
+//! X86_64 Assembler implementation.
+
 #![allow(non_upper_case_globals)]
 
 use super::buffer::{AssemblerBuffer, AssemblerLabel, LocalWriter};

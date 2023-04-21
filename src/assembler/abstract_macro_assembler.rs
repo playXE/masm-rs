@@ -564,7 +564,7 @@ impl AbstractMacroAssembler {
     pub fn debug_offset(&mut self) -> usize {
         self.assembler.debug_offset()
     }
-
+    
     pub unsafe fn link_jump_(code: *mut u8, jump: Jump, target: *mut u8) {
         TargetAssembler::link_jump_(code, jump.label, target);
     }

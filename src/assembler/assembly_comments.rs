@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use std::collections::{HashMap, BTreeMap};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
@@ -20,8 +21,8 @@ impl AssemblyCommentsRegistry {
         &INSTANCE
     }
 
-    pub fn comment<'a>(&self, in_code: *const u8) -> Option<String> {
-        let comments = self.lock.lock();
+    pub fn comment<'a>(&self, _in_code: *const u8) -> Option<String> {
+        /*let comments = self.lock.lock();
     
         let comments = comments.lower_bound(std::ops::Bound::Excluded(&(in_code as usize)));
         
@@ -37,11 +38,12 @@ impl AssemblyCommentsRegistry {
             }
         } else {
             None
-        }
+        }*/
+        None
     }
 
-    pub fn unregister_code_range(&self, start: *const u8, end: *const u8) {
-        let start = start as usize;
+    pub fn unregister_code_range(&self, _start: *const u8, _end: *const u8) {
+        /*let start = start as usize;
         let end = end as usize;
 
         let mut comments = self.lock.lock();
@@ -51,15 +53,15 @@ impl AssemblyCommentsRegistry {
             None => return,
         };
 
-        assert_eq!(found_end, end);
+        assert_eq!(found_end, end);*/
     }
 
-    pub fn register_code_range(&self, start: *const u8, end: *const u8, new_comments: CommentMap) {
-        let start = start as usize;
+    pub fn register_code_range(&self, _start: *const u8, _end: *const u8, _new_comments: CommentMap) {
+        /*let start = start as usize;
         let end = end as usize;
 
         let mut comments = self.lock.lock();
 
-        assert!(comments.insert(start, (end, new_comments)).is_none());
+        assert!(comments.insert(start, (end, new_comments)).is_none());*/
     }
 }

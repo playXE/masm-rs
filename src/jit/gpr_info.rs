@@ -140,6 +140,7 @@ cfg_if! {
                 &[r11, NUMBER_TAG_REGISTER, NOT_CELL_MASK_REGISTER]
             }
 
+    } else if #[cfg(target_arch="riscv64")] {
 
     } else {
         compile_error!("Unsupported architecture")
