@@ -212,12 +212,14 @@ macro_rules! decl_immediate {
 
             pub fn is_valid<T: num::PrimInt + num::NumCast>(imm_value: T) -> bool {
                 let shift = std::mem::size_of::<T>() * 8 - $immediate_size;
-                imm_value == ((imm_value << shift) >> shift)
+                
+               
+                imm_value == T::from((imm_value.to_i64().unwrap() << shift) >> shift).unwrap()
             }
 
             pub fn v32<T: num::NumCast>(imm_value: i32) -> T {
 
-                assert!(Self::is_valid(imm_value));
+                assert!(Self::is_valid(imm_value), "Invalid immediate value: {}", imm_value);
                 let imm_value = imm_value as u32;
                 let mask: u32 = Self::immediate_mask::<u32>();
                 T::from(imm_value & mask).unwrap()
@@ -2262,6 +2264,7 @@ impl ImmediateLoader {
         };
         // If the immediate value fits into the IImmediate mold, we can short-cut to just generating that through a single ADDI.
         if IImmediate::is_valid(imm) {
+            
             this.ops[this.opcount] = ImmOp {
                 op_type: ImmOpType::IImmediate,
                 value: IImmediate::v32::<i32>(imm as i32) as u32,
@@ -2282,12 +2285,19 @@ impl ImmediateLoader {
                 value += 1 << 12;
             }
 
+            this.ops[this.opcount] = ImmOp {
+                op_type: ImmOpType::ADDI,
+                value: add_imm as u32,
+            };
+
+            this.opcount += 1;
+
             // Shift out the bits incorporated into the just-added addi.
             value = value >> 12;
 
             // If the remainder of the immediate can fit into a 20-bit immediate, we can generate the LUI instruction that will end up
             // loading the initial higher bits of the desired immediate.
-            if is_valid64::<20>(value) {
+            if is_valid64::<20>(value as _) {
                 this.ops[this.opcount] = ImmOp {
                     op_type: ImmOpType::LUI,
                     value: ((value & ((1 << 20) - 1)) << 12) as u32,
@@ -2301,6 +2311,8 @@ impl ImmediateLoader {
                 op_type: ImmOpType::LSHIFT12,
                 value: 0,
             };
+
+            this.opcount += 1;
         }
 
         this
@@ -2325,7 +2337,7 @@ impl ImmediateLoader {
     pub fn move_into(&self, assembler: &mut RISCV64Assembler, dest: u8) {
         // This is a helper method that generates the necessary instructions through the RISCV64Assembler infrastructure.
         // Operations are traversed in reverse in order to match the generation process.
-
+        println!("Loading immediate: {:#x} {}", self.ops[0].value, self.opcount);
         for i in 0..self.opcount {
             let op = self.ops[self.opcount - (i + 1)];
 
