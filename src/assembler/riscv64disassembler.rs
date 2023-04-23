@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::fmt::Write;
 
 use super::riscv64assembler::*;
 
@@ -852,7 +852,7 @@ pub fn try_to_disassemble(
     prefix: &str,
     ip: u64,
     out: &mut dyn Write,
-) -> Result<(), std::io::Error> {
+) -> Result<(), std::fmt::Error> {
     let mut i = 0;
     while i < code.len() {
         let insn = InstructionValue::new(u32::from_le_bytes([

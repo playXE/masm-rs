@@ -806,7 +806,7 @@ riscv_insns! {
     LWU: ITypeBase<{LOAD}, 0b110>, "lwu"
     LD: ITypeBase<{LOAD}, 0b011>, "ld"
     SD: STypeBase<{STORE}, 0b011>, "sd"
-    ADDIW: ITypeBase<{OP_IMM_32}, 0b001>, "addiw"
+    ADDIW: ITypeBase<{OP_IMM_32}, 0b000>, "addiw"
 
 }
 
@@ -1743,43 +1743,43 @@ impl RISCV64Assembler {
         }
     }
 
-    pub fn fcvt_fp2si<const FP_SIZE: usize>(&mut self, rd: u8, rs1: u8) {
+    pub fn fcvt_fp2si<const FP_SIZE: usize>(&mut self, rd: u8, rs1: u8, rm: FPRoundingMode) {
         if FP_SIZE == 32 {
-            self.insn(FCVT_W_S::construct(rd, rs1, FPRoundingMode::DYN));
+            self.insn(FCVT_W_S::construct(rd, rs1, rm));
         } else {
-            self.insn(FCVT_L_S::construct(rd, rs1, FPRoundingMode::DYN));
+            self.insn(FCVT_L_S::construct(rd, rs1, rm));
         }
     }
 
-    pub fn fcvt_fp2ui<const FP_SIZE: usize>(&mut self, rd: u8, rs1: u8) {
+    pub fn fcvt_fp2ui<const FP_SIZE: usize>(&mut self, rd: u8, rs1: u8, rm: FPRoundingMode) {
         if FP_SIZE == 32 {
-            self.insn(FCVT_WU_S::construct(rd, rs1, FPRoundingMode::DYN));
+            self.insn(FCVT_WU_S::construct(rd, rs1, rm));
         } else {
-            self.insn(FCVT_LU_S::construct(rd, rs1, FPRoundingMode::DYN));
+            self.insn(FCVT_LU_S::construct(rd, rs1, rm));
         }
     }
 
-    pub fn fcvt_si2fp<const FP_SIZE: usize>(&mut self, rd: u8, rs1: u8) {
+    pub fn fcvt_si2fp<const FP_SIZE: usize>(&mut self, rd: u8, rs1: u8, rm: FPRoundingMode) {
         if FP_SIZE == 32 {
-            self.insn(FCVT_S_W::construct(rd, rs1, FPRoundingMode::DYN));
+            self.insn(FCVT_S_W::construct(rd, rs1, rm));
         } else {
-            self.insn(FCVT_S_L::construct(rd, rs1, FPRoundingMode::DYN));
+            self.insn(FCVT_S_L::construct(rd, rs1, rm));
         }
     }
 
-    pub fn fcvt_ui2fp<const FP_SIZE: usize>(&mut self, rd: u8, rs1: u8) {
+    pub fn fcvt_ui2fp<const FP_SIZE: usize>(&mut self, rd: u8, rs1: u8, rm: FPRoundingMode) {
         if FP_SIZE == 32 {
-            self.insn(FCVT_S_WU::construct(rd, rs1, FPRoundingMode::DYN));
+            self.insn(FCVT_S_WU::construct(rd, rs1, rm));
         } else {
-            self.insn(FCVT_S_LU::construct(rd, rs1, FPRoundingMode::DYN));
+            self.insn(FCVT_S_LU::construct(rd, rs1, rm));
         }
     }
 
-    pub fn fcvt_fp2fp<const FP_SIZE: usize, const FP_SIZE2: usize>(&mut self, rd: u8, rs1: u8) {
+    pub fn fcvt_fp2fp<const FP_SIZE: usize, const FP_SIZE2: usize>(&mut self, rd: u8, rs1: u8, rm: FPRoundingMode) {
         if FP_SIZE == 32 && FP_SIZE2 == 64 {
-            self.insn(FCVT_D_S::construct(rd, rs1, FPRoundingMode::DYN));
+            self.insn(FCVT_D_S::construct(rd, rs1, rm));
         } else if FP_SIZE == 64 && FP_SIZE2 == 32 {
-            self.insn(FCVT_S_D::construct(rd, rs1, FPRoundingMode::DYN));
+            self.insn(FCVT_S_D::construct(rd, rs1, rm));
         }
     }
 

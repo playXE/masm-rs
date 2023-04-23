@@ -1,6 +1,3 @@
-use super::assembly_comments::AssemblyCommentsRegistry;
-use iced_x86::*;
-
 pub fn try_to_disassemble<W: std::fmt::Write>(
     code: *const u8,
     size: usize,
@@ -33,8 +30,11 @@ pub fn try_to_disassemble<W: std::fmt::Write>(
             }
         }
     }*/
-
+    #[cfg(target_arch = "x86_64")]
     unsafe {
+        use super::assembly_comments::AssemblyCommentsRegistry;
+
+        use iced_x86::*;
         let code = std::slice::from_raw_parts(code, size);
         let mut decoder = Decoder::with_ip(64, code, code.as_ptr() as _, DecoderOptions::NONE);
 
@@ -59,6 +59,16 @@ pub fn try_to_disassemble<W: std::fmt::Write>(
                 write!(out, "\n")?;
             }*/
         }
+    }
+
+    #[cfg(target_arch = "riscv64")]
+    unsafe {
+        super::riscv64disassembler::try_to_disassemble(
+            std::slice::from_raw_parts(code, size),
+            prefix,
+            code as u64,
+            out,
+        )?;
     }
 
     Ok(())
