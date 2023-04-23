@@ -1383,6 +1383,10 @@ impl RISCV64Assembler {
         self.insn(LW::construct(rd, rs1, IImmediate::v32(imm)));
     }
 
+    pub fn ld(&mut self, rd: u8, rs1: u8, imm: i32) {
+        self.insn(LD::construct(rd, rs1, IImmediate::v32(imm)));
+    }
+
     pub fn lbu(&mut self, rd: u8, rs1: u8, imm: i32) {
         self.insn(LBU::construct(rd, rs1, IImmediate::v32(imm)));
     }
