@@ -1773,7 +1773,7 @@ impl X86Assembler {
     }
 
     pub fn cmpq_rr(&mut self, src: u8, dst: u8) {
-        self.formatter.one_byte_op64_rm(OP_CMP_EvGv, dst, src);
+        self.formatter.one_byte_op64_rm(OP_CMP_EvGv, src, dst);
     }
 
     pub fn cmpq_rm(&mut self, src: u8, offset: i32, base: u8) {
