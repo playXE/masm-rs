@@ -75,7 +75,6 @@ impl MacroAssemblerRISCV64 {
         }
     }
 
-
     pub const NUM_GPRS: usize = 32;
     pub const NUM_FPRS: usize = 32;
 
@@ -116,11 +115,6 @@ impl MacroAssemblerRISCV64 {
         }
     }
 
-    pub fn ret(&mut self) {
-        self.assembler.jalr(zero, x1, 0);
-    }
-    
-
     pub fn add32(&mut self, src: impl Into<Operand>, dst: impl Into<Operand>) {
         match (src.into(), dst.into()) {
             (Operand::Register(src), Operand::Register(dst)) => {
@@ -135,50 +129,77 @@ impl MacroAssemblerRISCV64 {
                 self.load_immediate64(address.ptr as _, Self::MEMORY_TEMP_REGISTER);
 
                 if IImmediate::is_valid(imm) {
-                    self.assembler.lw(Self::DATA_TEMP_REGISTER, Self::MEMORY_TEMP_REGISTER, 0);
-                    self.assembler.addi(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, imm);
-                    self.assembler.sw(Self::MEMORY_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 0);
+                    self.assembler
+                        .lw(Self::DATA_TEMP_REGISTER, Self::MEMORY_TEMP_REGISTER, 0);
+                    self.assembler
+                        .addi(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, imm);
+                    self.assembler
+                        .sw(Self::MEMORY_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 0);
                     return;
                 }
 
-                self.assembler.lw(Self::DATA_TEMP_REGISTER, Self::MEMORY_TEMP_REGISTER, 0);
+                self.assembler
+                    .lw(Self::DATA_TEMP_REGISTER, Self::MEMORY_TEMP_REGISTER, 0);
                 self.load_immediate32(imm, Self::DATA_TEMP_REGISTER);
-                self.assembler.add(Self::DATA_TEMP_REGISTER, Self::MEMORY_TEMP_REGISTER, Self::DATA_TEMP_REGISTER);
-                
+                self.assembler.add(
+                    Self::DATA_TEMP_REGISTER,
+                    Self::MEMORY_TEMP_REGISTER,
+                    Self::DATA_TEMP_REGISTER,
+                );
+
                 self.load_immediate64(address.ptr as _, Self::MEMORY_TEMP_REGISTER);
-                self.assembler.sw(Self::MEMORY_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 0);
+                self.assembler
+                    .sw(Self::MEMORY_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 0);
             }
 
             (Operand::Imm32(imm), Operand::Address(address)) => {
                 let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
 
                 if IImmediate::is_valid(imm) {
-                    self.assembler.lw(Self::DATA_TEMP_REGISTER, resolution.base, resolution.offset);
-                    self.assembler.addi(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, imm);
-                    self.assembler.sw(resolution.base, Self::DATA_TEMP_REGISTER, resolution.offset);
+                    self.assembler
+                        .lw(Self::DATA_TEMP_REGISTER, resolution.base, resolution.offset);
+                    self.assembler
+                        .addi(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, imm);
+                    self.assembler
+                        .sw(resolution.base, Self::DATA_TEMP_REGISTER, resolution.offset);
                     return;
                 }
 
-                self.assembler.lw(Self::MEMORY_TEMP_REGISTER, resolution.base, resolution.offset);
+                self.assembler.lw(
+                    Self::MEMORY_TEMP_REGISTER,
+                    resolution.base,
+                    resolution.offset,
+                );
                 self.load_immediate32(imm, Self::DATA_TEMP_REGISTER);
-                self.assembler.add(Self::DATA_TEMP_REGISTER, Self::MEMORY_TEMP_REGISTER, Self::DATA_TEMP_REGISTER);
-            
+                self.assembler.add(
+                    Self::DATA_TEMP_REGISTER,
+                    Self::MEMORY_TEMP_REGISTER,
+                    Self::DATA_TEMP_REGISTER,
+                );
+
                 let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
-                self.assembler.sw(resolution.base, Self::DATA_TEMP_REGISTER, resolution.offset);
+                self.assembler
+                    .sw(resolution.base, Self::DATA_TEMP_REGISTER, resolution.offset);
             }
 
             (Operand::Address(address), Operand::Register(dest)) => {
                 let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
-                self.assembler.lw(Self::DATA_TEMP_REGISTER, resolution.base, resolution.offset);
+                self.assembler
+                    .lw(Self::DATA_TEMP_REGISTER, resolution.base, resolution.offset);
                 self.assembler.addw(dest, Self::DATA_TEMP_REGISTER, zero);
                 self.assembler.mask_register(dest, dest, 32);
             }
 
-            _ => unreachable!(),
+            op => panic!("{:?}", op),
         }
     }
 
-    pub fn add32_rrr(&mut self, lhs: impl Into<Operand>, rhs: impl Into<Operand>, dest: impl Into<Operand>) {
+    pub fn add32_rrr(
+        &mut self,
+        lhs: impl Into<Operand>,
+        rhs: impl Into<Operand>,
+        dest: impl Into<Operand>,
+    ) {
         let lhs = lhs.into();
         let rhs = rhs.into();
         let dest = dest.into();
@@ -223,48 +244,67 @@ impl MacroAssemblerRISCV64 {
                 self.load_immediate64(address.ptr as _, Self::MEMORY_TEMP_REGISTER);
 
                 if IImmediate::is_valid(imm) {
-                    self.assembler.ld(Self::DATA_TEMP_REGISTER, Self::MEMORY_TEMP_REGISTER, 0);
-                    self.assembler.addi(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, imm);
-                    self.assembler.sd(Self::MEMORY_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 0);
+                    self.assembler
+                        .ld(Self::DATA_TEMP_REGISTER, Self::MEMORY_TEMP_REGISTER, 0);
+                    self.assembler
+                        .addi(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, imm);
+                    self.assembler
+                        .sd(Self::MEMORY_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 0);
                     return;
                 }
 
-                self.assembler.ld(Self::DATA_TEMP_REGISTER, Self::MEMORY_TEMP_REGISTER, 0);
+                self.assembler
+                    .ld(Self::DATA_TEMP_REGISTER, Self::MEMORY_TEMP_REGISTER, 0);
                 self.load_immediate32(imm, Self::DATA_TEMP_REGISTER);
-                self.assembler.add(Self::DATA_TEMP_REGISTER, Self::MEMORY_TEMP_REGISTER, Self::DATA_TEMP_REGISTER);
+                self.assembler.add(
+                    Self::DATA_TEMP_REGISTER,
+                    Self::MEMORY_TEMP_REGISTER,
+                    Self::DATA_TEMP_REGISTER,
+                );
 
                 self.load_immediate64(address.ptr as _, Self::MEMORY_TEMP_REGISTER);
-                self.assembler.sd(Self::MEMORY_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 0);
+                self.assembler
+                    .sd(Self::MEMORY_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 0);
             }
 
             (Operand::Imm32(imm), Operand::Address(address)) => {
                 let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
 
-                self.assembler.ld(Self::DATA_TEMP_REGISTER, resolution.base, resolution.offset);
+                self.assembler
+                    .ld(Self::DATA_TEMP_REGISTER, resolution.base, resolution.offset);
 
                 if IImmediate::is_valid(imm) {
-                    self.assembler.addi(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, imm);
-                    self.assembler.sd(resolution.base, Self::DATA_TEMP_REGISTER, resolution.offset);
+                    self.assembler
+                        .addi(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, imm);
+                    self.assembler
+                        .sd(resolution.base, Self::DATA_TEMP_REGISTER, resolution.offset);
                     return;
                 }
 
                 self.load_immediate32(imm, Self::DATA_TEMP_REGISTER);
-                self.assembler.add(Self::DATA_TEMP_REGISTER, Self::MEMORY_TEMP_REGISTER, Self::DATA_TEMP_REGISTER);
+                self.assembler.add(
+                    Self::DATA_TEMP_REGISTER,
+                    Self::MEMORY_TEMP_REGISTER,
+                    Self::DATA_TEMP_REGISTER,
+                );
 
                 let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
 
-                self.assembler.sd(resolution.base, Self::DATA_TEMP_REGISTER, resolution.offset);
+                self.assembler
+                    .sd(resolution.base, Self::DATA_TEMP_REGISTER, resolution.offset);
             }
 
             (Operand::AbsoluteAddress(address), Operand::Register(dest)) => {
                 self.load_immediate64(address.ptr as _, Self::MEMORY_TEMP_REGISTER);
-                self.assembler.ld(Self::MEMORY_TEMP_REGISTER, Self::MEMORY_TEMP_REGISTER, 0);
+                self.assembler
+                    .ld(Self::MEMORY_TEMP_REGISTER, Self::MEMORY_TEMP_REGISTER, 0);
                 self.assembler.add(dest, Self::MEMORY_TEMP_REGISTER, dest);
             }
 
             (Operand::Address(address), Operand::Register(dest)) => {
                 let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
-                self.assembler.ld(Self::DATA_TEMP_REGISTER, resolution.base, resolution.offset);
+                self.assembler
+                    .ld(Self::DATA_TEMP_REGISTER, resolution.base, resolution.offset);
                 self.assembler.add(dest, Self::DATA_TEMP_REGISTER, dest);
             }
 
@@ -272,7 +312,12 @@ impl MacroAssemblerRISCV64 {
         }
     }
 
-    pub fn add64_rrr(&mut self, lhs: impl Into<Operand>, rhs: impl Into<Operand>, dest: impl Into<Operand>) {
+    pub fn add64_rrr(
+        &mut self,
+        lhs: impl Into<Operand>,
+        rhs: impl Into<Operand>,
+        dest: impl Into<Operand>,
+    ) {
         let lhs = lhs.into();
         let rhs = rhs.into();
         let dest = dest.into();
@@ -316,10 +361,76 @@ impl MacroAssemblerRISCV64 {
                 self.sub32_rrr(src, dst, dst);
             }
 
-            
-            _ => todo!()
+            (Operand::Imm32(imm), Operand::Address(address)) => {
+                let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                self.assembler
+                    .lw(Self::DATA_TEMP_REGISTER, resolution.base, resolution.offset);
+
+                if IImmediate::is_valid(-imm) {
+                    self.assembler.addiw(
+                        Self::DATA_TEMP_REGISTER,
+                        Self::DATA_TEMP_REGISTER,
+                        -imm as i32,
+                    );
+                    self.assembler
+                        .sw(resolution.base, Self::DATA_TEMP_REGISTER, resolution.offset);
+                    return;
+                }
+
+                self.load_immediate32(imm, Self::MEMORY_TEMP_REGISTER);
+                self.assembler.subw(
+                    Self::DATA_TEMP_REGISTER,
+                    Self::DATA_TEMP_REGISTER,
+                    Self::MEMORY_TEMP_REGISTER,
+                );
+
+                let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                self.assembler
+                    .sw(resolution.base, Self::DATA_TEMP_REGISTER, resolution.offset);
+            }
+
+            (Operand::Imm32(imm), Operand::AbsoluteAddress(address)) => {
+                self.load_immediate64(address.ptr as _, Self::MEMORY_TEMP_REGISTER);
+
+                if IImmediate::is_valid(-imm) {
+                    self.assembler
+                        .lw(Self::DATA_TEMP_REGISTER, Self::MEMORY_TEMP_REGISTER, 0);
+                    self.assembler.addiw(
+                        Self::DATA_TEMP_REGISTER,
+                        Self::DATA_TEMP_REGISTER,
+                        -imm as i32,
+                    );
+                    self.assembler
+                        .sw(Self::MEMORY_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 0);
+                } else {
+                    self.assembler
+                        .lw(Self::DATA_TEMP_REGISTER, Self::MEMORY_TEMP_REGISTER, 0);
+                    self.load_immediate32(imm, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler.subw(
+                        Self::DATA_TEMP_REGISTER,
+                        Self::DATA_TEMP_REGISTER,
+                        Self::MEMORY_TEMP_REGISTER,
+                    );
+
+                    self.load_immediate64(address.ptr as _, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler
+                        .sw(Self::MEMORY_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 0);
+                }
+            }
+
+            (Operand::Address(address), Operand::Register(dest)) => {
+                let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+
+                self.assembler
+                    .lw(Self::DATA_TEMP_REGISTER, resolution.base, resolution.offset);
+
+                self.assembler.subw(dest, Self::DATA_TEMP_REGISTER, dest);
+
+                self.assembler.mask_register(dest, dest, 32);
+            }
+
+            _ => todo!(),
         }
-            
     }
 
     pub fn sub32_rrr(&mut self, op1: impl Into<Operand>, op2: impl Into<Operand>, dest: u8) {
@@ -336,7 +447,1347 @@ impl MacroAssemblerRISCV64 {
             _ => unreachable!(),
         }
     }
-    
+
+    pub fn sub64(&mut self, src: impl Into<Operand>, dest: u8) {
+        match src.into() {
+            Operand::Register(src) => {
+                self.sub64_rrr(dest, src, dest);
+            }
+
+            Operand::Imm32(imm) => {
+                self.sub64_rrr(dest, imm, dest);
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn sub64_rrr(&mut self, op1: u8, op2: impl Into<Operand>, dest: u8) {
+        match op2.into() {
+            Operand::Register(op2) => {
+                self.assembler.sub(dest, op1, op2);
+            }
+
+            Operand::Imm32(op2) => {
+                self.add64_rrr(-op2 as i32, op1, dest);
+            }
+
+            Operand::Imm64(op2) => self.add64_rrr(-op2, op1, dest),
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn mul32(&mut self, src: u8, dest: u8) {
+        self.mul32_rrr(src, dest, dest);
+    }
+
+    pub fn mul32_rrr(&mut self, lhs: impl Into<Operand>, rhs: u8, dest: u8) {
+        match lhs.into() {
+            Operand::Register(lhs) => {
+                self.assembler.mulw(dest, lhs, rhs);
+                self.assembler.mask_register(dest, dest, 32);
+            }
+
+            Operand::Imm32(imm) => {
+                self.load_immediate32(imm, Self::DATA_TEMP_REGISTER);
+                self.assembler.mulw(dest, Self::DATA_TEMP_REGISTER, rhs);
+                self.assembler.mask_register(dest, dest, 32);
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn mul64(&mut self, src: u8, dest: u8) {
+        self.mul64_rrr(src, dest, dest);
+    }
+
+    pub fn mul64_rrr(&mut self, lhs: u8, rhs: u8, dest: u8) {
+        self.assembler.mul(dest, lhs, rhs);
+    }
+
+    pub fn count_leading_zeros32(&mut self, src: u8, dest: u8) {
+        self.assembler
+            .zero_extend(Self::DATA_TEMP_REGISTER, src, 32);
+        self.assembler.addi(dest, zero, 32);
+
+        let mut zero_ = JumpList::new();
+
+        zero_.push(self.make_branch(RelationalCondition::Equal, Self::DATA_TEMP_REGISTER, zero));
+
+        let lbl = self.label();
+        self.assembler
+            .srli(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 1);
+        self.assembler.addi(dest, dest, -1);
+        zero_.push(self.make_branch(RelationalCondition::Equal, Self::DATA_TEMP_REGISTER, zero));
+        self.jump().link_to(self, lbl);
+
+        zero_.link(self);
+    }
+
+    pub fn count_leading_zeros64(&mut self, src: u8, dest: u8) {
+        self.assembler.addi(Self::DATA_TEMP_REGISTER, zero, 0);
+        self.assembler.addi(dest, zero, 64);
+
+        let mut zero_ = JumpList::new();
+
+        zero_.push(self.make_branch(RelationalCondition::Equal, src, zero));
+
+        let lbl = self.label();
+        self.assembler.srli(src, src, 1);
+        self.assembler.addi(dest, dest, -1);
+        zero_.push(self.make_branch(RelationalCondition::Equal, src, zero));
+        self.jump().link_to(self, lbl);
+
+        zero_.link(self);
+    }
+
+    pub fn count_trailing_zeros32(&mut self, src: u8, dest: u8) {
+        self.assembler.addi(dest, zero, 32);
+        self.assembler
+            .zero_extend(Self::DATA_TEMP_REGISTER, src, 32);
+
+        let mut zero_ = JumpList::new();
+        zero_.push(self.make_branch(RelationalCondition::Equal, Self::DATA_TEMP_REGISTER, zero));
+
+        let lbl = self.label();
+        self.assembler
+            .slli(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 1);
+        self.assembler.addi(dest, dest, -1);
+        zero_.push(self.make_branch(RelationalCondition::Equal, Self::DATA_TEMP_REGISTER, zero));
+        self.jump().link_to(self, lbl);
+
+        zero_.link(self);
+    }
+
+    pub fn count_trailing_zeros64(&mut self, src: u8, dest: u8) {
+        self.assembler.addi(dest, zero, 64);
+
+        let mut zero_ = JumpList::new();
+        zero_.push(self.make_branch(RelationalCondition::Equal, src, zero));
+
+        let lbl = self.label();
+        self.assembler.slli(src, src, 1);
+        self.assembler.addi(dest, dest, -1);
+        zero_.push(self.make_branch(RelationalCondition::Equal, src, zero));
+        self.jump().link_to(self, lbl);
+
+        zero_.link(self);
+    }
+
+    pub fn byte_swap16(&mut self, reg: u8) {
+        self.assembler.andi(Self::DATA_TEMP_REGISTER, reg, 0xff);
+        self.assembler
+            .slli(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 8);
+        self.assembler.andi(reg, reg, 48);
+        self.assembler.andi(reg, reg, 56);
+        self.assembler
+            .or(reg, Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER);
+    }
+
+    pub fn byte_swap32(&mut self, reg: u8) {
+        self.assembler.andi(Self::DATA_TEMP_REGISTER, reg, 0xff);
+        self.assembler
+            .slli(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 8);
+        self.assembler.srli(reg, reg, 8);
+
+        for i in 0..2 {
+            self.assembler.andi(Self::MEMORY_TEMP_REGISTER, reg, 0xff);
+            self.assembler.or(
+                Self::DATA_TEMP_REGISTER,
+                Self::DATA_TEMP_REGISTER,
+                Self::MEMORY_TEMP_REGISTER,
+            );
+            self.assembler
+                .slli(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 8);
+            self.assembler.srli(reg, reg, 8);
+        }
+
+        self.assembler.andi(Self::MEMORY_TEMP_REGISTER, reg, 0xff);
+        self.assembler
+            .or(reg, Self::DATA_TEMP_REGISTER, Self::MEMORY_TEMP_REGISTER);
+    }
+
+    pub fn byte_swap64(&mut self, reg: u8) {
+        self.assembler.andi(Self::DATA_TEMP_REGISTER, reg, 0xff);
+        self.assembler
+            .slli(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 8);
+        self.assembler.srli(reg, reg, 8);
+
+        for i in 0..6 {
+            self.assembler.andi(Self::MEMORY_TEMP_REGISTER, reg, 0xff);
+            self.assembler.or(
+                Self::DATA_TEMP_REGISTER,
+                Self::DATA_TEMP_REGISTER,
+                Self::MEMORY_TEMP_REGISTER,
+            );
+            self.assembler
+                .slli(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 8);
+            self.assembler.srli(reg, reg, 8);
+        }
+
+        self.assembler.andi(Self::MEMORY_TEMP_REGISTER, reg, 0xff);
+        self.assembler
+            .or(reg, Self::DATA_TEMP_REGISTER, Self::MEMORY_TEMP_REGISTER);
+    }
+
+    pub fn lshift32(&mut self, shift_amount: impl Into<Operand>, dest: u8) {
+        self.lshift32_rrr(dest, shift_amount, dest);
+    }
+
+    pub fn lshift32_rrr(
+        &mut self,
+        src: impl Into<Operand>,
+        shift_amount: impl Into<Operand>,
+        dest: u8,
+    ) {
+        match src.into() {
+            Operand::Register(src) => match shift_amount.into() {
+                Operand::Register(shift_amount) => {
+                    self.assembler.sllw(dest, src, shift_amount);
+                    self.assembler.mask_register(dest, dest, 32);
+                }
+
+                Operand::Imm32(shift_amount) => {
+                    self.assembler
+                        .slliw(dest, src, (shift_amount & ((1 << 6) - 1)) as u32);
+                    self.assembler.mask_register(dest, dest, 32);
+                }
+
+                _ => unreachable!(),
+            },
+            Operand::Address(src) => {
+                self.load32(src, Self::DATA_TEMP_REGISTER);
+                self.lshift32_rrr(Self::DATA_TEMP_REGISTER, shift_amount, dest);
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn lshift64(&mut self, shift_amount: impl Into<Operand>, dest: u8) {
+        self.lshift64_rrr(dest, shift_amount, dest);
+    }
+
+    pub fn lshift64_rrr(
+        &mut self,
+        src: impl Into<Operand>,
+        shift_amount: impl Into<Operand>,
+        dest: u8,
+    ) {
+        match src.into() {
+            Operand::Register(src) => match shift_amount.into() {
+                Operand::Register(shift_amount) => {
+                    self.assembler.sll(dest, src, shift_amount);
+                }
+
+                Operand::Imm32(shift_amount) => {
+                    self.assembler
+                        .slli(dest, src, (shift_amount & ((1 << 6) - 1)) as u32);
+                }
+
+                _ => unreachable!(),
+            },
+
+            Operand::Address(src) => {
+                self.load64(src, Self::DATA_TEMP_REGISTER);
+                self.lshift64_rrr(Self::DATA_TEMP_REGISTER, shift_amount, dest);
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn rshift32(&mut self, shift_amount: impl Into<Operand>, dest: u8) {
+        self.rshift32_rrr(dest, shift_amount, dest);
+    }
+
+    pub fn rshift32_rrr(&mut self, src: u8, shift_amount: impl Into<Operand>, dest: u8) {
+        match shift_amount.into() {
+            Operand::Register(shift_amount) => {
+                self.assembler.sraw(dest, src, shift_amount);
+                self.assembler.mask_register(dest, dest, 32);
+            }
+
+            Operand::Imm32(shift_amount) => {
+                self.assembler
+                    .sraiw(dest, src, (shift_amount & ((1 << 6) - 1)) as u32);
+                self.assembler.mask_register(dest, dest, 32);
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn urshift32(&mut self, shift_amount: impl Into<Operand>, dest: u8) {
+        self.urshift32_rrr(dest, shift_amount, dest);
+    }
+
+    pub fn urshift32_rrr(&mut self, src: u8, shift_amount: impl Into<Operand>, dest: u8) {
+        match shift_amount.into() {
+            Operand::Register(shift_amount) => {
+                self.assembler.srlw(dest, src, shift_amount);
+                self.assembler.mask_register(dest, dest, 32);
+            }
+
+            Operand::Imm32(shift_amount) => {
+                self.assembler
+                    .srliw(dest, src, (shift_amount & ((1 << 6) - 1)) as u32);
+                self.assembler.mask_register(dest, dest, 32);
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn rshift64(&mut self, shift_amount: impl Into<Operand>, dest: u8) {
+        self.rshift64_rrr(dest, shift_amount, dest);
+    }
+
+    pub fn rshift64_rrr(&mut self, src: u8, shift_amount: impl Into<Operand>, dest: u8) {
+        match shift_amount.into() {
+            Operand::Register(shift_amount) => {
+                self.assembler.sra(dest, src, shift_amount);
+            }
+
+            Operand::Imm32(shift_amount) => {
+                self.assembler
+                    .srai(dest, src, (shift_amount & ((1 << 6) - 1)) as u32);
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn urshift64(&mut self, shift_amount: impl Into<Operand>, dest: u8) {
+        self.urshift64_rrr(dest, shift_amount, dest);
+    }
+
+    pub fn urshift64_rrr(&mut self, src: u8, shift_amount: impl Into<Operand>, dest: u8) {
+        match shift_amount.into() {
+            Operand::Register(shift_amount) => {
+                self.assembler.srl(dest, src, shift_amount);
+            }
+
+            Operand::Imm32(shift_amount) => {
+                self.assembler
+                    .srli(dest, src, (shift_amount & ((1 << 6) - 1)) as u32);
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn load8(&mut self, address: impl Into<Operand>, dest: u8) {
+        match address.into() {
+            Operand::Address(address) => {
+                let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                self.assembler.lbu(dest, resolution.base, resolution.offset);
+            }
+
+            Operand::BaseIndex(address) => {
+                let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                self.assembler.lbu(dest, resolution.base, resolution.offset);
+            }
+
+            Operand::AbsoluteAddress(address) => {
+                self.load_immediate64(address.ptr as _, Self::MEMORY_TEMP_REGISTER);
+                self.assembler.lbu(dest, Self::MEMORY_TEMP_REGISTER, 0);
+            }
+
+            Operand::Imm64(imm) => {
+                self.load_immediate64(imm, Self::MEMORY_TEMP_REGISTER);
+                self.assembler.lbu(dest, Self::MEMORY_TEMP_REGISTER, 0);
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn load8_signed_extend_to_32(&mut self, address: impl Into<Operand>, dest: u8) {
+        match address.into() {
+            Operand::Address(address) => {
+                let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                self.assembler.lb(dest, resolution.base, resolution.offset);
+                self.assembler.mask_register(dest, dest, 32)
+            }
+
+            Operand::BaseIndex(address) => {
+                let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                self.assembler.lb(dest, resolution.base, resolution.offset);
+                self.assembler.mask_register(dest, dest, 32)
+            }
+
+            Operand::AbsoluteAddress(address) => {
+                self.load_immediate64(address.ptr as _, Self::MEMORY_TEMP_REGISTER);
+                self.assembler.lb(dest, Self::MEMORY_TEMP_REGISTER, 0);
+                self.assembler.mask_register(dest, dest, 32)
+            }
+
+            Operand::Imm64(imm) => {
+                self.load_immediate64(imm, Self::MEMORY_TEMP_REGISTER);
+                self.assembler.lb(dest, Self::MEMORY_TEMP_REGISTER, 0);
+                self.assembler.mask_register(dest, dest, 32)
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn load16(&mut self, address: impl Into<Operand>, dest: u8) {
+        match address.into() {
+            Operand::Address(address) => {
+                let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                self.assembler.lhu(dest, resolution.base, resolution.offset);
+            }
+
+            Operand::BaseIndex(address) => {
+                let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                self.assembler.lhu(dest, resolution.base, resolution.offset);
+            }
+
+            Operand::AbsoluteAddress(address) => {
+                self.load_immediate64(address.ptr as _, Self::MEMORY_TEMP_REGISTER);
+                self.assembler.lhu(dest, Self::MEMORY_TEMP_REGISTER, 0);
+            }
+
+            Operand::Imm64(imm) => {
+                self.load_immediate64(imm, Self::MEMORY_TEMP_REGISTER);
+                self.assembler.lhu(dest, Self::MEMORY_TEMP_REGISTER, 0);
+            }
+
+            Operand::ExtendedAddress(address) => {
+                self.load_immediate64(address.offset as _, Self::MEMORY_TEMP_REGISTER);
+                self.assembler
+                    .slli(Self::DATA_TEMP_REGISTER, address.base, -1i32 as u32);
+                self.assembler.add(
+                    Self::MEMORY_TEMP_REGISTER,
+                    Self::MEMORY_TEMP_REGISTER,
+                    Self::DATA_TEMP_REGISTER,
+                );
+                self.assembler.lhu(dest, Self::MEMORY_TEMP_REGISTER, 0);
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn load16_signed_extend_to_32(&mut self, address: impl Into<Operand>, dest: u8) {
+        match address.into() {
+            Operand::Address(address) => {
+                let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                self.assembler.lh(dest, resolution.base, resolution.offset);
+                self.assembler.mask_register(dest, dest, 32)
+            }
+
+            Operand::BaseIndex(address) => {
+                let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                self.assembler.lh(dest, resolution.base, resolution.offset);
+                self.assembler.mask_register(dest, dest, 32)
+            }
+
+            Operand::AbsoluteAddress(address) => {
+                self.load_immediate64(address.ptr as _, Self::MEMORY_TEMP_REGISTER);
+                self.assembler.lh(dest, Self::MEMORY_TEMP_REGISTER, 0);
+                self.assembler.mask_register(dest, dest, 32)
+            }
+
+            Operand::Imm64(imm) => {
+                self.load_immediate64(imm, Self::MEMORY_TEMP_REGISTER);
+                self.assembler.lh(dest, Self::MEMORY_TEMP_REGISTER, 0);
+                self.assembler.mask_register(dest, dest, 32)
+            }
+
+            Operand::ExtendedAddress(address) => {
+                self.load_immediate64(address.offset as _, Self::MEMORY_TEMP_REGISTER);
+                self.assembler
+                    .slli(Self::DATA_TEMP_REGISTER, address.base, -1i32 as u32);
+                self.assembler.add(
+                    Self::MEMORY_TEMP_REGISTER,
+                    Self::MEMORY_TEMP_REGISTER,
+                    Self::DATA_TEMP_REGISTER,
+                );
+                self.assembler.lh(dest, Self::MEMORY_TEMP_REGISTER, 0);
+                self.assembler.mask_register(dest, dest, 32)
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn load32(&mut self, address: impl Into<Operand>, dest: u8) {
+        match address.into() {
+            Operand::Address(address) => {
+                let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                self.assembler.lwu(dest, resolution.base, resolution.offset);
+            }
+
+            Operand::BaseIndex(address) => {
+                let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                self.assembler.lwu(dest, resolution.base, resolution.offset);
+            }
+
+            Operand::AbsoluteAddress(address) => {
+                self.load_immediate64(address.ptr as _, Self::MEMORY_TEMP_REGISTER);
+                self.assembler.lwu(dest, Self::MEMORY_TEMP_REGISTER, 0);
+            }
+
+            Operand::Imm64(imm) => {
+                self.load_immediate64(imm, Self::MEMORY_TEMP_REGISTER);
+                self.assembler.lwu(dest, Self::MEMORY_TEMP_REGISTER, 0);
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn load16_unaligned(&mut self, address: impl Into<Operand>, dest: u8) {
+        self.load16(address, dest);
+    }
+
+    pub fn load64(&mut self, address: impl Into<Operand>, dest: u8) {
+        match address.into() {
+            Operand::Address(address) => {
+                let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                self.assembler.ld(dest, resolution.base, resolution.offset);
+            }
+
+            Operand::BaseIndex(address) => {
+                let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                self.assembler.ld(dest, resolution.base, resolution.offset);
+            }
+
+            Operand::AbsoluteAddress(address) => {
+                self.load_immediate64(address.ptr as _, Self::MEMORY_TEMP_REGISTER);
+                self.assembler.ld(dest, Self::MEMORY_TEMP_REGISTER, 0);
+            }
+
+            Operand::Imm64(imm) => {
+                self.load_immediate64(imm, Self::MEMORY_TEMP_REGISTER);
+                self.assembler.ld(dest, Self::MEMORY_TEMP_REGISTER, 0);
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn load_pair32(&mut self, src: u8, offset: i32, dest1: u8, dest2: u8) {
+        if src == dest1 {
+            self.load32(Address::new(src, offset + 4), dest2);
+            self.load32(Address::new(src, offset), dest1);
+        } else {
+            self.load32(Address::new(src, offset), dest1);
+            self.load32(Address::new(src, offset + 4), dest2);
+        }
+    }
+
+    pub fn load_pair64(&mut self, src: u8, offset: i32, dest1: u8, dest2: u8) {
+        if src == dest1 {
+            self.load64(Address::new(src, offset + 8), dest2);
+            self.load64(Address::new(src, offset), dest1);
+        } else {
+            self.load64(Address::new(src, offset), dest1);
+            self.load64(Address::new(src, offset + 8), dest2);
+        }
+    }
+
+    pub fn store8(&mut self, src: impl Into<Operand>, address: impl Into<Operand>) {
+        match src.into() {
+            Operand::Register(src) => match address.into() {
+                Operand::Address(address) => {
+                    let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler.sb(resolution.base, src, resolution.offset);
+                }
+
+                Operand::BaseIndex(address) => {
+                    let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler.sb(resolution.base, src, resolution.offset);
+                }
+
+                Operand::AbsoluteAddress(address) => {
+                    self.load_immediate64(address.ptr as _, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler.sb(Self::MEMORY_TEMP_REGISTER, src, 0);
+                }
+
+                Operand::Imm64(imm) => {
+                    self.load_immediate64(imm, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler.sb(Self::MEMORY_TEMP_REGISTER, src, 0);
+                }
+
+                _ => unreachable!(),
+            },
+
+            Operand::Imm32(imm) => match address.into() {
+                Operand::Address(address) => {
+                    let mut imm_register = zero;
+                    let imm8 = imm as u8;
+
+                    if imm8 != 0 {
+                        self.load_immediate32(imm8 as i32, Self::DATA_TEMP_REGISTER);
+                        imm_register = Self::DATA_TEMP_REGISTER;
+                    }
+
+                    let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler
+                        .sb(resolution.base, imm_register, resolution.offset);
+                }
+
+                Operand::BaseIndex(address) => {
+                    let mut imm_register = zero;
+                    let imm8 = imm as u8;
+
+                    if imm8 != 0 {
+                        self.load_immediate32(imm8 as i32, Self::DATA_TEMP_REGISTER);
+                        imm_register = Self::DATA_TEMP_REGISTER;
+                    }
+
+                    let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler
+                        .sb(resolution.base, imm_register, resolution.offset);
+                }
+
+                Operand::AbsoluteAddress(address) => {
+                    let mut imm_register = zero;
+                    let imm8 = imm as u8;
+
+                    if imm8 != 0 {
+                        self.load_immediate32(imm8 as i32, Self::DATA_TEMP_REGISTER);
+                        imm_register = Self::DATA_TEMP_REGISTER;
+                    }
+
+                    self.load_immediate64(address.ptr as _, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler
+                        .sb(Self::MEMORY_TEMP_REGISTER, imm_register, 0);
+                }
+
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn store16(&mut self, src: impl Into<Operand>, address: impl Into<Operand>) {
+        match src.into() {
+            Operand::Register(src) => match address.into() {
+                Operand::Address(address) => {
+                    let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler.sh(resolution.base, src, resolution.offset);
+                }
+
+                Operand::BaseIndex(address) => {
+                    let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler.sh(resolution.base, src, resolution.offset);
+                }
+
+                Operand::AbsoluteAddress(address) => {
+                    self.load_immediate64(address.ptr as _, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler.sh(Self::MEMORY_TEMP_REGISTER, src, 0);
+                }
+
+                Operand::Imm64(imm) => {
+                    self.load_immediate64(imm, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler.sh(Self::MEMORY_TEMP_REGISTER, src, 0);
+                }
+
+                _ => unreachable!(),
+            },
+
+            Operand::Imm32(imm) => match address.into() {
+                Operand::Address(address) => {
+                    let mut imm_register = zero;
+                    let imm16 = imm as u16;
+
+                    if imm16 != 0 {
+                        self.load_immediate32(imm16 as i32, Self::DATA_TEMP_REGISTER);
+                        imm_register = Self::DATA_TEMP_REGISTER;
+                    }
+
+                    let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler
+                        .sh(resolution.base, imm_register, resolution.offset);
+                }
+
+                Operand::BaseIndex(address) => {
+                    let mut imm_register = zero;
+                    let imm16 = imm as u16;
+
+                    if imm16 != 0 {
+                        self.load_immediate32(imm16 as i32, Self::DATA_TEMP_REGISTER);
+                        imm_register = Self::DATA_TEMP_REGISTER;
+                    }
+
+                    let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler
+                        .sh(resolution.base, imm_register, resolution.offset);
+                }
+
+                Operand::AbsoluteAddress(address) => {
+                    let mut imm_register = zero;
+                    let imm16 = imm as u16;
+
+                    if imm16 != 0 {
+                        self.load_immediate32(imm16 as i32, Self::DATA_TEMP_REGISTER);
+                        imm_register = Self::DATA_TEMP_REGISTER;
+                    }
+
+                    self.load_immediate64(address.ptr as _, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler
+                        .sh(Self::MEMORY_TEMP_REGISTER, imm_register, 0);
+                }
+
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn store32(&mut self, src: impl Into<Operand>, address: impl Into<Operand>) {
+        match src.into() {
+            Operand::Register(src) => match address.into() {
+                Operand::Address(address) => {
+                    let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler.sw(resolution.base, src, resolution.offset);
+                }
+
+                Operand::BaseIndex(address) => {
+                    let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler.sw(resolution.base, src, resolution.offset);
+                }
+
+                Operand::AbsoluteAddress(address) => {
+                    self.load_immediate64(address.ptr as _, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler.sw(Self::MEMORY_TEMP_REGISTER, src, 0);
+                }
+
+                Operand::Imm64(imm) => {
+                    self.load_immediate64(imm, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler.sw(Self::MEMORY_TEMP_REGISTER, src, 0);
+                }
+
+                _ => unreachable!(),
+            },
+
+            Operand::Imm32(imm) => match address.into() {
+                Operand::Address(address) => {
+                    let mut imm_register = zero;
+
+                    if imm != 0 {
+                        self.load_immediate32(imm, Self::DATA_TEMP_REGISTER);
+                        imm_register = Self::DATA_TEMP_REGISTER;
+                    }
+
+                    let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler
+                        .sw(resolution.base, imm_register, resolution.offset);
+                }
+
+                Operand::BaseIndex(address) => {
+                    let mut imm_register = zero;
+
+                    if imm != 0 {
+                        self.load_immediate32(imm, Self::DATA_TEMP_REGISTER);
+                        imm_register = Self::DATA_TEMP_REGISTER;
+                    }
+
+                    let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler
+                        .sw(resolution.base, imm_register, resolution.offset);
+                }
+
+                Operand::AbsoluteAddress(address) => {
+                    let mut imm_register = zero;
+
+                    if imm != 0 {
+                        self.load_immediate32(imm, Self::DATA_TEMP_REGISTER);
+                        imm_register = Self::DATA_TEMP_REGISTER;
+                    }
+
+                    self.load_immediate64(address.ptr as _, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler
+                        .sw(Self::MEMORY_TEMP_REGISTER, imm_register, 0);
+                }
+
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn store64(&mut self, src: impl Into<Operand>, address: impl Into<Operand>) {
+        match src.into() {
+            Operand::Register(src) => match address.into() {
+                Operand::Address(address) => {
+                    let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler.sd(resolution.base, src, resolution.offset);
+                }
+
+                Operand::BaseIndex(address) => {
+                    let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler.sd(resolution.base, src, resolution.offset);
+                }
+
+                Operand::AbsoluteAddress(address) => {
+                    self.load_immediate64(address.ptr as _, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler.sd(Self::MEMORY_TEMP_REGISTER, src, 0);
+                }
+
+                Operand::Imm64(imm) => {
+                    self.load_immediate64(imm, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler.sd(Self::MEMORY_TEMP_REGISTER, src, 0);
+                }
+
+                _ => unreachable!(),
+            },
+
+            Operand::Imm64(imm) => match address.into() {
+                Operand::Address(address) => {
+                    let mut imm_register = zero;
+
+                    if imm != 0 {
+                        self.load_immediate64(imm, Self::DATA_TEMP_REGISTER);
+                        imm_register = Self::DATA_TEMP_REGISTER;
+                    }
+
+                    let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler
+                        .sd(resolution.base, imm_register, resolution.offset);
+                }
+
+                Operand::BaseIndex(address) => {
+                    let mut imm_register = zero;
+
+                    if imm != 0 {
+                        self.load_immediate64(imm, Self::DATA_TEMP_REGISTER);
+                        imm_register = Self::DATA_TEMP_REGISTER;
+                    }
+
+                    let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler
+                        .sd(resolution.base, imm_register, resolution.offset);
+                }
+
+                Operand::AbsoluteAddress(address) => {
+                    let mut imm_register = zero;
+
+                    if imm != 0 {
+                        self.load_immediate64(imm, Self::DATA_TEMP_REGISTER);
+                        imm_register = Self::DATA_TEMP_REGISTER;
+                    }
+
+                    self.load_immediate64(address.ptr as _, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler
+                        .sd(Self::MEMORY_TEMP_REGISTER, imm_register, 0);
+                }
+
+                _ => unreachable!(),
+            },
+
+            Operand::Imm32(imm) => match address.into() {
+                Operand::Address(address) => {
+                    let mut imm_register = zero;
+
+                    if imm != 0 {
+                        self.load_immediate32(imm, Self::DATA_TEMP_REGISTER);
+                        imm_register = Self::DATA_TEMP_REGISTER;
+                    }
+
+                    let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler
+                        .sd(resolution.base, imm_register, resolution.offset);
+                }
+
+                Operand::BaseIndex(address) => {
+                    let mut imm_register = zero;
+
+                    if imm != 0 {
+                        self.load_immediate32(imm, Self::DATA_TEMP_REGISTER);
+                        imm_register = Self::DATA_TEMP_REGISTER;
+                    }
+
+                    let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler
+                        .sd(resolution.base, imm_register, resolution.offset);
+                }
+
+                Operand::AbsoluteAddress(address) => {
+                    let mut imm_register = zero;
+
+                    if imm != 0 {
+                        self.load_immediate32(imm, Self::DATA_TEMP_REGISTER);
+                        imm_register = Self::DATA_TEMP_REGISTER;
+                    }
+
+                    self.load_immediate64(address.ptr as _, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler
+                        .sd(Self::MEMORY_TEMP_REGISTER, imm_register, 0);
+                }
+
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn transfer64(&mut self, src: Address, dest: Address) {
+        self.load64(src, Self::DATA_TEMP_REGISTER);
+        self.store64(Self::DATA_TEMP_REGISTER, dest);
+    }
+
+    pub fn transfer_ptr(&mut self, src: Address, dest: Address) {
+        self.load64(src, Self::DATA_TEMP_REGISTER);
+        self.store64(Self::DATA_TEMP_REGISTER, dest);
+    }
+
+    pub fn store_pair32(&mut self, src1: u8, src2: u8, dest: u8, offset: i32) {
+        self.store32(src1, Address::new(dest, offset));
+        self.store32(src2, Address::new(dest, offset + 4));
+    }
+
+    pub fn store_pair64(&mut self, src1: u8, src2: u8, dest: u8, offset: i32) {
+        self.store64(src1, Address::new(dest, offset));
+        self.store64(src2, Address::new(dest, offset + 8));
+    }
+
+    pub fn zero_extend8_to_32(&mut self, src: u8, dest: u8) {
+        self.assembler.slli(dest, src, 56);
+        self.assembler.srli(dest, dest, 56);
+    }
+
+    pub fn zero_extend16_to_32(&mut self, src: u8, dest: u8) {
+        self.assembler.slli(dest, src, 48);
+        self.assembler.srli(dest, dest, 48);
+    }
+
+    pub fn zero_extend32_to_word(&mut self, src: u8, dest: u8) {
+        self.assembler.slli(dest, src, 32);
+        self.assembler.srli(dest, dest, 32);
+    }
+
+    pub fn sign_extend8_to_32(&mut self, src: u8, dest: u8) {
+        self.assembler.slli(dest, src, 56);
+        self.assembler.srai(dest, dest, 24);
+        self.assembler.srli(dest, dest, 32);
+    }
+
+    pub fn sign_extend16_to_32(&mut self, src: u8, dest: u8) {
+        self.assembler.slli(dest, src, 48);
+        self.assembler.srai(dest, dest, 16);
+        self.assembler.srli(dest, dest, 32);
+    }
+
+    pub fn zero_extend8_to_64(&mut self, src: u8, dest: u8) {
+        self.zero_extend8_to_32(src, dest);
+    }
+
+    pub fn zero_extend16_to_64(&mut self, src: u8, dest: u8) {
+        self.zero_extend16_to_32(src, dest);
+    }
+
+    pub fn sign_extend8_to_64(&mut self, src: u8, dest: u8) {
+        self.sign_extend8_to_32(src, dest);
+        self.sign_extend32_to_64(src, dest);
+    }
+
+    pub fn sign_extend32_to_64(&mut self, src: impl Into<Operand>, dest: u8) {
+        match src.into() {
+            Operand::Imm32(imm) => {
+                self.load_immediate32(imm, dest);
+            }
+
+            Operand::Register(src) => {
+                self.assembler.addiw(dest, src, 0);
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn and32(&mut self, src: impl Into<Operand>, dest: u8) {
+        let src = src.into();
+        if let Operand::Address(address) = src {
+            let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+            self.assembler
+                .lw(Self::DATA_TEMP_REGISTER, resolution.base, resolution.offset);
+            self.assembler.and(dest, Self::DATA_TEMP_REGISTER, dest);
+            self.assembler.mask_register(dest, dest, 32);
+            return;
+        }
+        self.and32_rrr(src, dest, dest);
+    }
+
+    pub fn and32_rrr(&mut self, op1: impl Into<Operand>, op2: u8, dest: u8) {
+        match op1.into() {
+            Operand::Imm32(imm) => {
+                if !IImmediate::is_valid(imm) {
+                    self.load_immediate32(imm, Self::DATA_TEMP_REGISTER);
+                    self.assembler.and(dest, Self::DATA_TEMP_REGISTER, op2);
+                } else {
+                    self.assembler.andi(dest, op2, imm);
+                }
+
+                self.assembler.mask_register(dest, dest, 32);
+            }
+
+            Operand::Register(op1) => {
+                self.assembler.and(dest, op1, op2);
+                self.assembler.mask_register(dest, dest, 32);
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn and64(&mut self, src: impl Into<Operand>, dest: u8) {
+        self.and64_rrr(src, dest, dest);
+    }
+
+    pub fn and64_rrr(&mut self, op1: impl Into<Operand>, op2: u8, dest: u8) {
+        match op1.into() {
+            Operand::Imm32(imm) => {
+                if !IImmediate::is_valid(imm) {
+                    self.load_immediate32(imm, Self::DATA_TEMP_REGISTER);
+                    self.assembler.and(dest, Self::DATA_TEMP_REGISTER, op2);
+                } else {
+                    self.assembler.andi(dest, op2, imm);
+                }
+            }
+
+            Operand::Register(op1) => {
+                self.assembler.and(dest, op1, op2);
+            }
+
+            Operand::Imm64(imm) => {
+                if IImmediate::is_valid(imm) {
+                    self.assembler.andi(dest, op2, imm as i32);
+                    return;
+                }
+                self.load_immediate64(imm, Self::DATA_TEMP_REGISTER);
+                self.assembler.and(dest, Self::DATA_TEMP_REGISTER, op2);
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn or8(&mut self, src: impl Into<Operand>, address: AbsoluteAddress) {
+        match src.into() {
+            Operand::Register(src) => {
+                self.load_immediate64(address.ptr as _, Self::MEMORY_TEMP_REGISTER);
+                self.assembler
+                    .lb(Self::DATA_TEMP_REGISTER, Self::MEMORY_TEMP_REGISTER, 0);
+                self.assembler
+                    .or(Self::DATA_TEMP_REGISTER, src, Self::DATA_TEMP_REGISTER);
+                self.assembler
+                    .sb(Self::MEMORY_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 0);
+            }
+
+            Operand::Imm32(imm) => {
+                self.load_immediate64(address.ptr as _, Self::MEMORY_TEMP_REGISTER);
+                self.assembler
+                    .lb(Self::DATA_TEMP_REGISTER, Self::MEMORY_TEMP_REGISTER, 0);
+
+                if IImmediate::is_valid(imm) {
+                    self.assembler
+                        .ori(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, imm);
+                    self.assembler
+                        .sb(Self::MEMORY_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 0);
+                } else {
+                    self.load_immediate32(imm, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler.or(
+                        Self::DATA_TEMP_REGISTER,
+                        Self::DATA_TEMP_REGISTER,
+                        Self::MEMORY_TEMP_REGISTER,
+                    );
+                    self.load_immediate64(address.ptr as _, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler
+                        .sb(Self::MEMORY_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 0);
+                }
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn or16(&mut self, src: impl Into<Operand>, address: AbsoluteAddress) {
+        match src.into() {
+            Operand::Register(src) => {
+                self.load_immediate64(address.ptr as _, Self::MEMORY_TEMP_REGISTER);
+                self.assembler
+                    .lh(Self::DATA_TEMP_REGISTER, Self::MEMORY_TEMP_REGISTER, 0);
+                self.assembler
+                    .or(Self::DATA_TEMP_REGISTER, src, Self::DATA_TEMP_REGISTER);
+                self.assembler
+                    .sh(Self::MEMORY_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 0);
+            }
+
+            Operand::Imm32(imm) => {
+                self.load_immediate64(address.ptr as _, Self::MEMORY_TEMP_REGISTER);
+                self.assembler
+                    .lh(Self::DATA_TEMP_REGISTER, Self::MEMORY_TEMP_REGISTER, 0);
+
+                if IImmediate::is_valid(imm) {
+                    self.assembler
+                        .ori(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, imm);
+                    self.assembler
+                        .sh(Self::MEMORY_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 0);
+                } else {
+                    self.load_immediate32(imm, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler.or(
+                        Self::DATA_TEMP_REGISTER,
+                        Self::DATA_TEMP_REGISTER,
+                        Self::MEMORY_TEMP_REGISTER,
+                    );
+                    self.load_immediate64(address.ptr as _, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler
+                        .sh(Self::MEMORY_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 0);
+                }
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn or32(&mut self, src: impl Into<Operand>, dest: impl Into<Operand>) {
+        match dest.into() {
+            Operand::Register(dest) => {
+                self.or32_rrr(src, dest, dest);
+            }
+
+            Operand::AbsoluteAddress(address) => match src.into() {
+                Operand::Register(src) => {
+                    self.load_immediate64(address.ptr as _, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler
+                        .lw(Self::DATA_TEMP_REGISTER, Self::MEMORY_TEMP_REGISTER, 0);
+                    self.assembler
+                        .or(Self::DATA_TEMP_REGISTER, src, Self::DATA_TEMP_REGISTER);
+                    self.assembler
+                        .sw(Self::MEMORY_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 0);
+                }
+
+                Operand::Imm32(imm) => {
+                    self.load_immediate64(address.ptr as _, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler
+                        .lw(Self::DATA_TEMP_REGISTER, Self::MEMORY_TEMP_REGISTER, 0);
+
+                    if IImmediate::is_valid(imm) {
+                        self.assembler
+                            .ori(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, imm);
+                        self.assembler
+                            .sw(Self::MEMORY_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 0);
+                    } else {
+                        self.load_immediate32(imm, Self::MEMORY_TEMP_REGISTER);
+                        self.assembler.or(
+                            Self::DATA_TEMP_REGISTER,
+                            Self::DATA_TEMP_REGISTER,
+                            Self::MEMORY_TEMP_REGISTER,
+                        );
+                        self.load_immediate64(address.ptr as _, Self::MEMORY_TEMP_REGISTER);
+                        self.assembler
+                            .sw(Self::MEMORY_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 0);
+                    }
+                }
+
+                _ => unreachable!(),
+            },
+
+            Operand::Address(address) => {
+                if let Operand::Imm32(imm) = src.into() {
+                    let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+
+                    self.assembler
+                        .lw(Self::DATA_TEMP_REGISTER, resolution.base, resolution.offset);
+
+                    if IImmediate::is_valid(imm) {
+                        self.assembler.ori(
+                            Self::DATA_TEMP_REGISTER,
+                            Self::MEMORY_TEMP_REGISTER,
+                            imm,
+                        );
+                        self.assembler
+                            .sw(resolution.base, Self::DATA_TEMP_REGISTER, 0);
+                    } else {
+                        self.load_immediate32(imm, Self::MEMORY_TEMP_REGISTER);
+                        self.assembler.or(
+                            Self::DATA_TEMP_REGISTER,
+                            Self::DATA_TEMP_REGISTER,
+                            Self::MEMORY_TEMP_REGISTER,
+                        );
+                        let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                        self.assembler.sw(
+                            resolution.base,
+                            Self::DATA_TEMP_REGISTER,
+                            resolution.offset,
+                        );
+                    }
+                } else {
+                    unreachable!()
+                }
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn or32_rrr(&mut self, op1: impl Into<Operand>, op2: u8, dest: u8) {
+        match op1.into() {
+            Operand::Register(src) => {
+                self.assembler.or(dest, src, op2);
+                self.assembler.mask_register(dest, dest, 32);
+            }
+
+            Operand::Imm32(imm) => {
+                if IImmediate::is_valid(imm) {
+                    self.assembler.ori(dest, op2, imm);
+                    self.assembler.mask_register(dest, dest, 32);
+                } else {
+                    self.load_immediate32(imm, Self::DATA_TEMP_REGISTER);
+                    self.assembler.or(dest, op2, Self::DATA_TEMP_REGISTER);
+                    self.assembler.mask_register(dest, dest, 32);
+                }
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn or64_rrr(&mut self, op1: impl Into<Operand>, op2: u8, dest: u8) {
+        match op1.into() {
+            Operand::Imm32(imm) => {
+                if IImmediate::is_valid(imm) {
+                    self.assembler.ori(dest, op2, imm);
+                } else {
+                    self.load_immediate32(imm, Self::DATA_TEMP_REGISTER);
+                    self.assembler.or(dest, Self::DATA_TEMP_REGISTER, op2);
+                }
+            }
+
+            Operand::Imm64(imm) => {
+                if IImmediate::is_valid(imm) {
+                    self.assembler.ori(dest, op2, imm as _);
+                } else {
+                    self.load_immediate64(imm, Self::DATA_TEMP_REGISTER);
+                    self.assembler.or(dest, Self::DATA_TEMP_REGISTER, op2);
+                }
+            }
+
+            Operand::Register(op1) => {
+                self.assembler.or(dest, op1, op2);
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn or64(&mut self, src: impl Into<Operand>, dest: u8) {
+        self.or64_rrr(src, dest, dest);
+    }
+
+    pub fn xor32(&mut self, src: impl Into<Operand>, dest: u8) {
+        match src.into() {
+            Operand::Address(address) => {
+                let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                self.assembler
+                    .lw(Self::DATA_TEMP_REGISTER, resolution.base, resolution.offset);
+                self.assembler.xor(dest, Self::DATA_TEMP_REGISTER, dest);
+                self.assembler.mask_register(dest, dest, 32);
+            }
+
+            op => self.xor32_rrr(op, dest, dest),
+        }
+    }
+
+    pub fn xor32_rrr(&mut self, op1: impl Into<Operand>, op2: u8, dest: u8) {
+        match op1.into() {
+            Operand::Register(src) => {
+                self.assembler.xor(dest, src, op2);
+                self.assembler.mask_register(dest, dest, 32);
+            }
+
+            Operand::Imm32(imm) => {
+                if IImmediate::is_valid(imm) {
+                    self.assembler.xori(dest, op2, imm);
+                    self.assembler.mask_register(dest, dest, 32);
+                } else {
+                    self.load_immediate32(imm, Self::DATA_TEMP_REGISTER);
+                    self.assembler.xor(dest, op2, Self::DATA_TEMP_REGISTER);
+                    self.assembler.mask_register(dest, dest, 32);
+                }
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn xor64(&mut self, src: impl Into<Operand>, dest: impl Into<Operand>) {
+        match (src.into(), dest.into()) {
+            (Operand::Address(address), Operand::Register(dest)) => {
+                let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                self.assembler
+                    .ld(Self::DATA_TEMP_REGISTER, resolution.base, resolution.offset);
+                self.assembler.xor(dest, Self::DATA_TEMP_REGISTER, dest);
+            }
+
+            (Operand::Register(src), Operand::Address(dest)) => {
+                let resolution = self.resolve_address(dest, Self::MEMORY_TEMP_REGISTER);
+                self.assembler
+                    .ld(Self::DATA_TEMP_REGISTER, resolution.base, resolution.offset);
+                self.assembler
+                    .xor(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, src);
+                self.assembler
+                    .sd(resolution.base, Self::DATA_TEMP_REGISTER, resolution.offset);
+            }
+
+            (op, Operand::Register(dest)) => self.xor64_rrr(op, dest, dest),
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn xor64_rrr(&mut self, op1: impl Into<Operand>, op2: u8, dest: u8) {
+        match op1.into() {
+            Operand::Imm32(imm) => {
+                if IImmediate::is_valid(imm) {
+                    self.assembler.xori(dest, op2, imm);
+                } else {
+                    self.load_immediate32(imm, Self::DATA_TEMP_REGISTER);
+                    self.assembler.xor(dest, Self::DATA_TEMP_REGISTER, op2);
+                }
+            }
+
+            Operand::Imm64(imm) => {
+                if IImmediate::is_valid(imm) {
+                    self.assembler.xori(dest, op2, imm as _);
+                } else {
+                    self.load_immediate64(imm, Self::DATA_TEMP_REGISTER);
+                    self.assembler.xor(dest, Self::DATA_TEMP_REGISTER, op2);
+                }
+            }
+
+            Operand::Register(op1) => {
+                self.assembler.xor(dest, op1, op2);
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn not32(&mut self, src_dest: u8) {
+        self.assembler.xori(src_dest, src_dest, -1);
+        self.assembler.mask_register(src_dest, src_dest, 32);
+    }
+
+    pub fn not64(&mut self, src_dest: u8) {
+        self.assembler.xori(src_dest, src_dest, -1);
+    }
+
+    pub fn neg32(&mut self, src_dest: u8) {
+        self.assembler.subw(src_dest, zero, src_dest);
+        self.assembler
+            .mask_register(src_dest, Self::DATA_TEMP_REGISTER, 32);
+    }
+
+    pub fn neg64(&mut self, src_dest: u8) {
+        self.assembler.sub(src_dest, zero, src_dest);
+    }
 
     pub fn mov(&mut self, src: impl Into<Operand>, dst: impl Into<Operand>) {
         match dst.into() {
@@ -369,21 +1820,579 @@ impl MacroAssemblerRISCV64 {
         }
     }
 
+    pub fn swap(&mut self, reg1: u8, reg2: u8) {
+        self.mov(reg1, Self::DATA_TEMP_REGISTER);
+        self.mov(reg2, reg1);
+        self.mov(Self::DATA_TEMP_REGISTER, reg2);
+    }
+
+    pub fn swap_double(&mut self, reg1: u8, reg2: u8) {
+        if reg1 == reg2 {
+            return;
+        }
+
+        self.move_double(reg1, Self::FP_TEMP_REGISTER);
+        self.move_double(reg2, reg1);
+        self.move_double(Self::FP_TEMP_REGISTER, reg2);
+    }
+
+    pub fn move_zero_to_float(&mut self, dest: u8) {
+        self.assembler
+            .fcvt_si2fp::<32>(dest, zero, FPRoundingMode::DYN);
+    }
+
+    pub fn move_zero_to_double(&mut self, dest: u8) {
+        self.assembler
+            .fcvt_si2fp::<64>(dest, zero, FPRoundingMode::DYN);
+    }
+
+    pub fn move_double(&mut self, src: u8, dest: u8) {
+        self.assembler.fsgnj::<64>(dest, src, src);
+    }
+
+    pub fn move_double_to64(&mut self, src: u8, dest: u8) {
+        self.assembler.fmv_fp2i::<64>(dest, src);
+    }
+
+    pub fn move64_to_double(&mut self, src: u8, dest: u8) {
+        self.assembler.fmv_i2fp::<64>(dest, src);
+    }
+
+    pub fn move_float(&mut self, src: u8, dest: u8) {
+        self.assembler.fsgnj::<32>(dest, src, src);
+    }
+
+    pub fn move_float_to64(&mut self, src: u8, dest: u8) {
+        self.assembler.fmv_fp2i::<32>(dest, src);
+    }
+
+    pub fn move64_to_float(&mut self, src: u8, dest: u8) {
+        self.assembler.fmv_i2fp::<32>(dest, src);
+    }
+
     pub fn jump(&mut self) -> Jump {
         let label = self.assembler.label();
 
-        self.assembler.jump_placeholder(|asm| {
-            asm.jal(zero, 0)
-        });
+        self.assembler.jump_placeholder(|asm| asm.jal(zero, 0));
 
         Jump::new(label)
     }
 
-    pub fn breakpoint(&mut self) {}
+    pub unsafe fn read_call_target(call: *mut u8) -> *const u8 {
+        RISCV64Assembler::read_call_target(call)
+    }
 
-    pub unsafe fn link_call(_: *mut u8, _: Call, _: *const u8) {}
-    pub unsafe fn link_jump(_: *mut u8, _: Jump, _: *const u8) {}
-    pub unsafe fn link_pointer(_: *mut u8, _: AssemblerLabel, _: *const u8) {}
+    pub unsafe fn replace_With_vm_halt(instruction_start: *mut u8) {
+        RISCV64Assembler::replace_with_vm_halt(instruction_start);
+    }
+
+    pub unsafe fn replace_with_jump(instruction_start: *mut u8, dest: *mut u8) {
+        RISCV64Assembler::replace_with_jump(instruction_start, dest);
+    }
+
+    pub const fn max_jump_replacement_size() -> usize {
+        RISCV64Assembler::max_jump_replacement_size()
+    }
+
+    pub const fn patchable_jump_size() -> usize {
+        RISCV64Assembler::patchable_jump_size()
+    }
+
+    pub unsafe fn start_of_branch_ptr_with_patch_on_register(label: *mut u8) -> *mut u8 {
+        label
+    }
+
+    pub unsafe fn revert_jump_replacement_to_branch_ptr_with_patch(
+        jump: *mut u8,
+        _: u8,
+        initial_value: *mut u8,
+    ) {
+        RISCV64Assembler::revert_jump_replacement_to_patch(jump, initial_value);
+    }
+
+    pub unsafe fn link_call(code: *mut u8, call: Call, function: *const u8) {
+        if !call.is_flag_set(Call::NEAR) {
+            RISCV64Assembler::link_pointer(code, call.label, function as _)
+        } else {
+            RISCV64Assembler::link_call(code, call.label, function as _)
+        }
+    }
+
+    pub unsafe fn repatch_call(call: *mut u8, destination: *mut u8) {
+        RISCV64Assembler::repatch_pointer(call, destination);
+    }
+
+    pub fn far_jump(&mut self, target: impl Into<Operand>) {
+        match target.into() {
+            Operand::Register(target) => {
+                self.assembler.jalr(zero, target, 0);
+            }
+
+            Operand::AbsoluteAddress(address) => {
+                self.load_immediate64(address.ptr as _, Self::DATA_TEMP_REGISTER);
+                self.assembler
+                    .ld(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 0);
+                self.assembler.jalr(zero, Self::DATA_TEMP_REGISTER, 0);
+            }
+
+            Operand::Address(address) => {
+                let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                self.assembler
+                    .ld(Self::DATA_TEMP_REGISTER, resolution.base, resolution.offset);
+                self.assembler.jalr(zero, Self::DATA_TEMP_REGISTER, 0);
+            }
+
+            Operand::BaseIndex(address) => {
+                let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                self.assembler
+                    .ld(Self::DATA_TEMP_REGISTER, resolution.base, resolution.offset);
+                self.assembler.jalr(zero, Self::DATA_TEMP_REGISTER, 0);
+            }
+
+            Operand::Imm64(imm) => {
+                self.load_immediate64(imm, Self::DATA_TEMP_REGISTER);
+                self.assembler.jalr(zero, Self::DATA_TEMP_REGISTER, 0);
+            }
+
+            Operand::ImmPtr(imm) => {
+                self.load_immediate64(imm as _, Self::DATA_TEMP_REGISTER);
+                self.assembler.jalr(zero, Self::DATA_TEMP_REGISTER, 0);
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn near_call(&mut self) -> Call {
+        let label = self.assembler.label();
+
+        self.assembler.near_call_placeholder(|asm| asm.jal(x1, 0));
+
+        Call::new(label, Call::LINKABLE_NEAR)
+    }
+
+    pub fn near_tail_call(&mut self) -> Call {
+        let label = self.assembler.label();
+
+        self.assembler
+            .near_call_placeholder(|asm| asm.jalr(zero, x1, 0));
+
+        Call::new(label, Call::LINKABLE_NEAR_TAIL)
+    }
+
+    pub fn thread_safe_patchable_near_call(&mut self) -> Call {
+        let label = self.assembler.label();
+
+        self.assembler.near_call_placeholder(|asm| asm.jal(x1, 0));
+
+        Call::new(label, Call::LINKABLE_NEAR)
+    }
+
+    pub fn thread_safe_patchable_near_tail_call(&mut self) -> Call {
+        let label = self.assembler.label();
+
+        self.assembler
+            .near_call_placeholder(|asm| asm.jalr(zero, x1, 0));
+
+        Call::new(label, Call::LINKABLE_NEAR_TAIL)
+    }
+
+    pub fn ret(&mut self) {
+        self.assembler.jalr(zero, x1, 0);
+    }
+
+    pub fn compare8(&mut self, cond: RelationalCondition, address: Address, imm: i32, dest: u8) {
+        let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+        self.assembler.lb(
+            Self::MEMORY_TEMP_REGISTER,
+            resolution.base,
+            resolution.offset,
+        );
+        self.load_immediate32(imm, Self::DATA_TEMP_REGISTER);
+        self.compare_finalize(
+            cond,
+            Self::MEMORY_TEMP_REGISTER,
+            Self::DATA_TEMP_REGISTER,
+            dest,
+        )
+    }
+
+    pub fn compare32(
+        &mut self,
+        cond: RelationalCondition,
+        lhs: impl Into<Operand>,
+        rhs: impl Into<Operand>,
+        dest: u8,
+    ) {
+        match lhs.into() {
+            Operand::Register(lhs) => match rhs.into() {
+                Operand::Register(rhs) => {
+                    self.assembler
+                        .sign_extend(Self::MEMORY_TEMP_REGISTER, lhs, 32);
+                    self.assembler
+                        .sign_extend(Self::DATA_TEMP_REGISTER, rhs, 32);
+                    self.compare_finalize(
+                        cond,
+                        Self::MEMORY_TEMP_REGISTER,
+                        Self::DATA_TEMP_REGISTER,
+                        dest,
+                    );
+                }
+
+                Operand::Imm32(rhs) => {
+                    self.assembler
+                        .sign_extend(Self::MEMORY_TEMP_REGISTER, lhs, 32);
+                    self.load_immediate32(rhs, Self::DATA_TEMP_REGISTER);
+                    self.compare_finalize(
+                        cond,
+                        Self::MEMORY_TEMP_REGISTER,
+                        Self::DATA_TEMP_REGISTER,
+                        dest,
+                    );
+                }
+
+                _ => unreachable!(),
+            },
+
+            Operand::Address(lhs) => match rhs.into() {
+                Operand::Register(rhs) => {
+                    let resolution = self.resolve_address(lhs, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler.lw(
+                        Self::MEMORY_TEMP_REGISTER,
+                        resolution.base,
+                        resolution.offset,
+                    );
+                    self.assembler
+                        .sign_extend(Self::DATA_TEMP_REGISTER, rhs, 32);
+                    self.compare_finalize(
+                        cond,
+                        Self::MEMORY_TEMP_REGISTER,
+                        Self::DATA_TEMP_REGISTER,
+                        dest,
+                    );
+                }
+                _ => unreachable!(),
+            },
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn compare64(
+        &mut self,
+        cond: RelationalCondition,
+        lhs: u8,
+        rhs: impl Into<Operand>,
+        dest: u8,
+    ) {
+        match rhs.into() {
+            Operand::Register(rhs) => {
+                self.assembler
+                    .sign_extend(Self::MEMORY_TEMP_REGISTER, lhs, 64);
+                self.assembler
+                    .sign_extend(Self::DATA_TEMP_REGISTER, rhs, 64);
+                self.compare_finalize(
+                    cond,
+                    Self::MEMORY_TEMP_REGISTER,
+                    Self::DATA_TEMP_REGISTER,
+                    dest,
+                );
+            }
+
+            Operand::Imm32(rhs) => {
+                self.assembler
+                    .sign_extend(Self::MEMORY_TEMP_REGISTER, lhs, 64);
+                self.load_immediate32(rhs, Self::DATA_TEMP_REGISTER);
+                self.compare_finalize(
+                    cond,
+                    Self::MEMORY_TEMP_REGISTER,
+                    Self::DATA_TEMP_REGISTER,
+                    dest,
+                );
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn test8(&mut self, cond: ResultCondition, address: Address, imm: i32, dest: u8) {
+        let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+        self.assembler
+            .lbu(Self::DATA_TEMP_REGISTER, resolution.base, resolution.offset);
+        self.assembler
+            .andi(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, imm as _);
+        self.test_finalize(cond, Self::DATA_TEMP_REGISTER, dest);
+    }
+
+    pub fn test32(
+        &mut self,
+        cond: ResultCondition,
+        lhs: impl Into<Operand>,
+        rhs: impl Into<Operand>,
+        dest: u8,
+    ) {
+        match (lhs.into(), rhs.into()) {
+            (Operand::Register(lhs), Operand::Register(rhs)) => {
+                self.assembler.and(Self::DATA_TEMP_REGISTER, lhs, rhs);
+                self.assembler.mask_register(
+                    Self::DATA_TEMP_REGISTER,
+                    Self::DATA_TEMP_REGISTER,
+                    32,
+                );
+                self.test_finalize(cond, Self::DATA_TEMP_REGISTER, dest);
+            }
+            (Operand::Register(lhs), Operand::Imm32(imm)) => {
+                if !IImmediate::is_valid(imm) {
+                    self.load_immediate32(imm, Self::DATA_TEMP_REGISTER);
+                    self.assembler
+                        .and(Self::DATA_TEMP_REGISTER, lhs, Self::DATA_TEMP_REGISTER);
+                } else {
+                    self.assembler.andi(Self::DATA_TEMP_REGISTER, lhs, imm as _);
+                }
+
+                self.assembler.mask_register(
+                    Self::DATA_TEMP_REGISTER,
+                    Self::DATA_TEMP_REGISTER,
+                    32,
+                );
+                self.test_finalize(cond, Self::DATA_TEMP_REGISTER, dest);
+            }
+
+            (Operand::Address(address), Operand::Imm32(imm)) => {
+                let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                self.assembler.lwu(
+                    Self::MEMORY_TEMP_REGISTER,
+                    resolution.base,
+                    resolution.offset,
+                );
+
+                if !IImmediate::is_valid(imm) {
+                    self.load_immediate32(imm, Self::DATA_TEMP_REGISTER);
+                    self.assembler.and(
+                        Self::DATA_TEMP_REGISTER,
+                        Self::MEMORY_TEMP_REGISTER,
+                        Self::DATA_TEMP_REGISTER,
+                    );
+                } else {
+                    self.assembler.andi(
+                        Self::DATA_TEMP_REGISTER,
+                        Self::MEMORY_TEMP_REGISTER,
+                        imm as _,
+                    );
+                }
+
+                self.test_finalize(cond, Self::DATA_TEMP_REGISTER, dest)
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn test64(&mut self, cond: ResultCondition, lhs: u8, rhs: impl Into<Operand>, dest: u8) {
+        match rhs.into() {
+            Operand::Imm32(imm) => {
+                if IImmediate::is_valid(imm) {
+                    self.assembler.andi(dest, lhs, imm as _);
+                } else {
+                    self.load_immediate32(imm, Self::DATA_TEMP_REGISTER);
+                    self.assembler.and(dest, lhs, Self::DATA_TEMP_REGISTER);
+                }
+
+                self.test_finalize(cond, dest, dest);
+            }
+
+            Operand::Register(rhs) => {
+                self.assembler.and(dest, lhs, rhs);
+                self.test_finalize(cond, dest, dest);
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn branch8(
+        &mut self,
+        cond: RelationalCondition,
+        left: impl Into<Operand>,
+        right: i32,
+    ) -> Jump {
+        match left.into() {
+            Operand::Address(address) => {
+                let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                self.assembler.lb(
+                    Self::MEMORY_TEMP_REGISTER,
+                    resolution.base,
+                    resolution.offset,
+                );
+
+                self.load_immediate32(right, Self::DATA_TEMP_REGISTER);
+                self.make_branch(cond, Self::MEMORY_TEMP_REGISTER, Self::DATA_TEMP_REGISTER)
+            }
+
+            Operand::AbsoluteAddress(address) => {
+                self.load_immediate64(address.ptr as _, Self::MEMORY_TEMP_REGISTER);
+                self.assembler
+                    .lb(Self::MEMORY_TEMP_REGISTER, Self::MEMORY_TEMP_REGISTER, 0);
+                self.load_immediate32(right, Self::DATA_TEMP_REGISTER);
+                self.make_branch(cond, Self::MEMORY_TEMP_REGISTER, Self::DATA_TEMP_REGISTER)
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn branch32(
+        &mut self,
+        cond: RelationalCondition,
+        lhs: impl Into<Operand>,
+        rhs: impl Into<Operand>,
+    ) -> Jump {
+        match (lhs.into(), rhs.into()) {
+            (Operand::Register(lhs), Operand::Register(rhs)) => {
+                self.assembler
+                    .sign_extend(Self::DATA_TEMP_REGISTER, lhs, 32);
+                self.assembler
+                    .sign_extend(Self::MEMORY_TEMP_REGISTER, rhs, 32);
+
+                self.make_branch(cond, Self::DATA_TEMP_REGISTER, Self::MEMORY_TEMP_REGISTER)
+            }
+
+            (Operand::Register(lhs), Operand::Imm32(imm)) => {
+                self.assembler
+                    .sign_extend(Self::DATA_TEMP_REGISTER, lhs, 32);
+                self.load_immediate32(imm, Self::MEMORY_TEMP_REGISTER);
+
+                self.make_branch(cond, Self::DATA_TEMP_REGISTER, Self::MEMORY_TEMP_REGISTER)
+            }
+
+            (Operand::Register(lhs), Operand::Address(address)) => {
+                let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                self.assembler.lw(
+                    Self::MEMORY_TEMP_REGISTER,
+                    resolution.base,
+                    resolution.offset,
+                );
+
+                self.assembler
+                    .sign_extend(Self::DATA_TEMP_REGISTER, lhs, 32);
+                self.make_branch(cond, Self::DATA_TEMP_REGISTER, Self::MEMORY_TEMP_REGISTER)
+            }
+
+            (Operand::Address(address), Operand::Register(rhs)) => {
+                let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                self.assembler
+                    .lw(Self::DATA_TEMP_REGISTER, resolution.base, resolution.offset);
+
+                self.assembler
+                    .sign_extend(Self::MEMORY_TEMP_REGISTER, rhs, 32);
+                self.make_branch(cond, Self::DATA_TEMP_REGISTER, Self::MEMORY_TEMP_REGISTER)
+            }
+
+            (Operand::Address(address), Operand::Imm32(imm)) => {
+                let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                self.assembler
+                    .lw(Self::DATA_TEMP_REGISTER, resolution.base, resolution.offset);
+
+                self.load_immediate32(imm, Self::MEMORY_TEMP_REGISTER);
+                self.make_branch(cond, Self::DATA_TEMP_REGISTER, Self::MEMORY_TEMP_REGISTER)
+            }
+
+            (Operand::AbsoluteAddress(address), Operand::Register(rhs)) => {
+                self.load_immediate64(address.ptr as _, Self::MEMORY_TEMP_REGISTER);
+                self.assembler
+                    .lw(Self::MEMORY_TEMP_REGISTER, Self::MEMORY_TEMP_REGISTER, 0);
+
+                self.assembler
+                    .sign_extend(Self::DATA_TEMP_REGISTER, rhs, 32);
+                self.make_branch(cond, Self::MEMORY_TEMP_REGISTER, Self::DATA_TEMP_REGISTER)
+            }
+
+            (Operand::BaseIndex(address), Operand::Imm32(imm)) => {
+                let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                self.assembler.lw(
+                    Self::MEMORY_TEMP_REGISTER,
+                    resolution.base,
+                    resolution.offset,
+                );
+
+                self.load_immediate32(imm, Self::DATA_TEMP_REGISTER);
+                self.make_branch(cond, Self::MEMORY_TEMP_REGISTER, Self::DATA_TEMP_REGISTER)
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn breakpoint(&mut self) {
+        self.assembler.ebreak();
+    }
+
+    pub fn call_op(&mut self, op: Option<impl Into<Operand>>) -> Call {
+        if let Some(op) = op {
+            match op.into() {
+                Operand::Register(reg) => {
+                    self.assembler.jalr(x1, reg, 0);
+                    Call::new(self.assembler.label(), Call::NONE)
+                }
+
+                Operand::Address(address) => {
+                    let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler
+                        .ld(Self::DATA_TEMP_REGISTER, resolution.base, resolution.offset);
+
+                    self.assembler.jalr(x1, Self::DATA_TEMP_REGISTER, 0);
+
+                    Call::new(self.assembler.label(), Call::NONE)
+                }
+
+                Operand::AbsoluteAddress(address) => {
+                    self.load_immediate64(address.ptr as _, Self::DATA_TEMP_REGISTER);
+                    self.assembler.jalr(x1, Self::DATA_TEMP_REGISTER, 0);
+
+                    Call::new(self.assembler.label(), Call::NONE)
+                }
+
+                Operand::Imm64(imm) => {
+                    self.load_immediate64(imm, Self::DATA_TEMP_REGISTER);
+                    self.assembler.jalr(x1, Self::DATA_TEMP_REGISTER, 0);
+
+                    Call::new(self.assembler.label(), Call::NONE)
+                }
+
+                _ => unreachable!(),
+            }
+        } else {
+            let label = self.assembler.label();
+            self.assembler.pointer_call_placeholder(|asm| {
+                asm.addi(Self::DATA_TEMP_REGISTER, zero, 0);
+                asm.jalr(x1, Self::DATA_TEMP_REGISTER, 0);
+            });
+
+            Call::new(label, Call::LINKABLE)
+        }
+    }
+
+    pub fn push(&mut self, src: u8) {
+        self.assembler.addi(sp, sp, -8);
+        self.assembler.sd(sp, src, 0);
+    }
+
+    pub fn push_pair(&mut self, src1: u8, src2: u8) {
+        self.assembler.addi(sp, sp, -16);
+        self.assembler.sd(sp, src1, 0);
+        self.assembler.sd(sp, src2, 8);
+    }
+
+    pub fn pop(&mut self, dest: u8) {
+        self.assembler.ld(dest, sp, 0);
+        self.assembler.addi(sp, sp, 8);
+    }
+
+    pub fn pop_pair(&mut self, dest1: u8, dest2: u8) {
+        self.assembler.ld(dest1, sp, 0);
+        self.assembler.ld(dest2, sp, 8);
+        self.assembler.addi(sp, sp, 16);
+    }
 }
 
 enum ArithmeticOperation {
@@ -859,48 +2868,75 @@ impl MacroAssemblerRISCV64 {
         }
     }
 
-    fn branch_fp<const FP_SIZE: usize, const INVERT: bool>(&mut self, cond: DoubleCondition, lhs: u8, rhs: u8) -> Jump {
+    fn branch_fp<const FP_SIZE: usize, const INVERT: bool>(
+        &mut self,
+        cond: DoubleCondition,
+        lhs: u8,
+        rhs: u8,
+    ) -> Jump {
         let mut unordered_jumps = JumpList::new();
 
-        self.assembler.fclass::<FP_SIZE>(Self::DATA_TEMP_REGISTER, lhs);
-        self.assembler.andi(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 0b1100000000);
-        unordered_jumps.push(self.make_branch(RelationalCondition::NotEqual, Self::DATA_TEMP_REGISTER, zero));
+        self.assembler
+            .fclass::<FP_SIZE>(Self::DATA_TEMP_REGISTER, lhs);
+        self.assembler.andi(
+            Self::DATA_TEMP_REGISTER,
+            Self::DATA_TEMP_REGISTER,
+            0b1100000000,
+        );
+        unordered_jumps.push(self.make_branch(
+            RelationalCondition::NotEqual,
+            Self::DATA_TEMP_REGISTER,
+            zero,
+        ));
 
-        self.assembler.fclass::<FP_SIZE>(Self::DATA_TEMP_REGISTER, rhs);
-        self.assembler.andi(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 0b1100000000);
-        unordered_jumps.push(self.make_branch(RelationalCondition::NotEqual, Self::DATA_TEMP_REGISTER, zero));
+        self.assembler
+            .fclass::<FP_SIZE>(Self::DATA_TEMP_REGISTER, rhs);
+        self.assembler.andi(
+            Self::DATA_TEMP_REGISTER,
+            Self::DATA_TEMP_REGISTER,
+            0b1100000000,
+        );
+        unordered_jumps.push(self.make_branch(
+            RelationalCondition::NotEqual,
+            Self::DATA_TEMP_REGISTER,
+            zero,
+        ));
 
         match cond {
-            DoubleCondition::EqualAndOrdered
-            | DoubleCondition::EqualOrUnordered => {
-                self.assembler.feq::<FP_SIZE>(Self::DATA_TEMP_REGISTER, lhs, rhs);
+            DoubleCondition::EqualAndOrdered | DoubleCondition::EqualOrUnordered => {
+                self.assembler
+                    .feq::<FP_SIZE>(Self::DATA_TEMP_REGISTER, lhs, rhs);
             }
 
-            DoubleCondition::NotEqualAndOrdered
-            | DoubleCondition::NotEqualOrUnordered => {
-                self.assembler.feq::<FP_SIZE>(Self::DATA_TEMP_REGISTER, lhs, rhs);
-                self.assembler.xori(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 1);
+            DoubleCondition::NotEqualAndOrdered | DoubleCondition::NotEqualOrUnordered => {
+                self.assembler
+                    .feq::<FP_SIZE>(Self::DATA_TEMP_REGISTER, lhs, rhs);
+                self.assembler
+                    .xori(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 1);
             }
 
-            DoubleCondition::GreaterThanAndOrdered
-            | DoubleCondition::GreaterThanOrUnordered => {
-                self.assembler.flt::<FP_SIZE>(Self::DATA_TEMP_REGISTER, rhs, lhs);
+            DoubleCondition::GreaterThanAndOrdered | DoubleCondition::GreaterThanOrUnordered => {
+                self.assembler
+                    .flt::<FP_SIZE>(Self::DATA_TEMP_REGISTER, rhs, lhs);
             }
 
             DoubleCondition::GreaterThanOrEqualAndOrdered
             | DoubleCondition::GreaterThanOrEqualOrUnordered => {
-                self.assembler.fle::<FP_SIZE>(Self::DATA_TEMP_REGISTER, rhs, lhs);
-                self.assembler.xori(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 1);
+                self.assembler
+                    .fle::<FP_SIZE>(Self::DATA_TEMP_REGISTER, rhs, lhs);
+                self.assembler
+                    .xori(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 1);
             }
 
-            DoubleCondition::LessThanAndOrdered
-            | DoubleCondition::LessThanOrUnordered => {
-                self.assembler.flt::<FP_SIZE>(Self::DATA_TEMP_REGISTER, lhs, rhs);
+            DoubleCondition::LessThanAndOrdered | DoubleCondition::LessThanOrUnordered => {
+                self.assembler
+                    .flt::<FP_SIZE>(Self::DATA_TEMP_REGISTER, lhs, rhs);
             }
 
             DoubleCondition::LessThanOrEqualAndOrdered
             | DoubleCondition::LessThanOrEqualOrUnordered => {
-                self.assembler.fle::<FP_SIZE>(Self::DATA_TEMP_REGISTER, lhs, rhs);
+                self.assembler
+                    .fle::<FP_SIZE>(Self::DATA_TEMP_REGISTER, lhs, rhs);
             }
         }
 
@@ -925,11 +2961,15 @@ impl MacroAssemblerRISCV64 {
 
         end.link(self);
 
-        self.make_branch(if INVERT {
-            RelationalCondition::Equal
-        } else {
-            RelationalCondition::NotEqual
-        }, Self::DATA_TEMP_REGISTER, zero)
+        self.make_branch(
+            if INVERT {
+                RelationalCondition::Equal
+            } else {
+                RelationalCondition::NotEqual
+            },
+            Self::DATA_TEMP_REGISTER,
+            zero,
+        )
     }
 
     fn round_fp<const FP_SIZE: usize>(&mut self, src: u8, dest: u8, rm: FPRoundingMode) {
@@ -937,45 +2977,67 @@ impl MacroAssemblerRISCV64 {
 
         // Test the given source register for NaN condition. If detected, it should be
         // propagated to the destination register.
-        self.assembler.fclass::<FP_SIZE>(Self::DATA_TEMP_REGISTER, src);
-        self.assembler.andi(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 0b1100000000);
+        self.assembler
+            .fclass::<FP_SIZE>(Self::DATA_TEMP_REGISTER, src);
+        self.assembler.andi(
+            Self::DATA_TEMP_REGISTER,
+            Self::DATA_TEMP_REGISTER,
+            0b1100000000,
+        );
         let not_nan = self.make_branch(RelationalCondition::Equal, Self::DATA_TEMP_REGISTER, zero);
 
         self.assembler.feq::<FP_SIZE>(dest, src, src);
         end.push(self.jump());
 
         not_nan.link(self);
-        self.assembler.fsgnjx::<FP_SIZE>(Self::FP_TEMP_REGISTER, src, src);
+        self.assembler
+            .fsgnjx::<FP_SIZE>(Self::FP_TEMP_REGISTER, src, src);
 
         // Compare the absolute source value with the maximum representable integer value.
         // Rounding is only possible if the absolute source value is smaller.
         if FP_SIZE == 32 {
-            self.assembler.addi(Self::DATA_TEMP_REGISTER, zero, 0b10010111);
-            self.assembler.slli(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 23);
-            self.assembler.fmv_i2fp::<FP_SIZE>(Self::FP_TEMP_REGISTER2, Self::DATA_TEMP_REGISTER);
+            self.assembler
+                .addi(Self::DATA_TEMP_REGISTER, zero, 0b10010111);
+            self.assembler
+                .slli(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 23);
+            self.assembler
+                .fmv_i2fp::<FP_SIZE>(Self::FP_TEMP_REGISTER2, Self::DATA_TEMP_REGISTER);
         } else {
-            self.assembler.addi(Self::DATA_TEMP_REGISTER, zero, 0b10000110100);
-            self.assembler.slli(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 52);
-            self.assembler.fmv_i2fp::<FP_SIZE>(Self::FP_TEMP_REGISTER2, Self::DATA_TEMP_REGISTER);
+            self.assembler
+                .addi(Self::DATA_TEMP_REGISTER, zero, 0b10000110100);
+            self.assembler
+                .slli(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 52);
+            self.assembler
+                .fmv_i2fp::<FP_SIZE>(Self::FP_TEMP_REGISTER2, Self::DATA_TEMP_REGISTER);
         }
 
-        self.assembler.flt::<FP_SIZE>(Self::DATA_TEMP_REGISTER, Self::FP_TEMP_REGISTER, Self::FP_TEMP_REGISTER2);
-        let not_roundable = self.make_branch(RelationalCondition::Equal, Self::DATA_TEMP_REGISTER, zero);
+        self.assembler.flt::<FP_SIZE>(
+            Self::DATA_TEMP_REGISTER,
+            Self::FP_TEMP_REGISTER,
+            Self::FP_TEMP_REGISTER2,
+        );
+        let not_roundable =
+            self.make_branch(RelationalCondition::Equal, Self::DATA_TEMP_REGISTER, zero);
 
         let dealiased_src = if src == dest {
-            self.assembler.fsgnj::<FP_SIZE>(Self::FP_TEMP_REGISTER, src, src);
+            self.assembler
+                .fsgnj::<FP_SIZE>(Self::FP_TEMP_REGISTER, src, src);
             Self::FP_TEMP_REGISTER
         } else {
-            src 
+            src
         };
         // Rounding can now be done by roundtripping through a general-purpose register
         // with the desired rounding mode applied.
         if FP_SIZE == 32 {
-            self.assembler.fcvt_fp2si::<FP_SIZE>(Self::DATA_TEMP_REGISTER, dealiased_src, rm);
-            self.assembler.fcvt_si2fp::<FP_SIZE>(dest, Self::DATA_TEMP_REGISTER, rm);
+            self.assembler
+                .fcvt_fp2si::<FP_SIZE>(Self::DATA_TEMP_REGISTER, dealiased_src, rm);
+            self.assembler
+                .fcvt_si2fp::<FP_SIZE>(dest, Self::DATA_TEMP_REGISTER, rm);
         } else {
-            self.assembler.fcvt_fp2si::<FP_SIZE>(Self::DATA_TEMP_REGISTER, dealiased_src, rm);
-            self.assembler.fcvt_si2fp::<FP_SIZE>(dest, Self::DATA_TEMP_REGISTER, rm);
+            self.assembler
+                .fcvt_fp2si::<FP_SIZE>(Self::DATA_TEMP_REGISTER, dealiased_src, rm);
+            self.assembler
+                .fcvt_si2fp::<FP_SIZE>(dest, Self::DATA_TEMP_REGISTER, rm);
         }
 
         self.assembler.fsgnj::<FP_SIZE>(dest, dest, dealiased_src);
@@ -990,32 +3052,53 @@ impl MacroAssemblerRISCV64 {
         end.link(self);
     }
 
-    fn compare_fp<const FP_SIZE: usize>(&mut self, cond: DoubleCondition, lhs: u8, rhs: u8, dest: u8) {
+    fn compare_fp<const FP_SIZE: usize>(
+        &mut self,
+        cond: DoubleCondition,
+        lhs: u8,
+        rhs: u8,
+        dest: u8,
+    ) {
         let mut unordered_jumps = JumpList::new();
 
-         // Detect any NaN values that could still yield a positive comparison, depending on the condition.
-        self.assembler.fclass::<FP_SIZE>(Self::DATA_TEMP_REGISTER, lhs);
-        self.assembler.andi(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 0b1100000000);
-        unordered_jumps.push(self.make_branch(RelationalCondition::Equal, Self::DATA_TEMP_REGISTER, zero));
+        // Detect any NaN values that could still yield a positive comparison, depending on the condition.
+        self.assembler
+            .fclass::<FP_SIZE>(Self::DATA_TEMP_REGISTER, lhs);
+        self.assembler.andi(
+            Self::DATA_TEMP_REGISTER,
+            Self::DATA_TEMP_REGISTER,
+            0b1100000000,
+        );
+        unordered_jumps.push(self.make_branch(
+            RelationalCondition::Equal,
+            Self::DATA_TEMP_REGISTER,
+            zero,
+        ));
 
-        self.assembler.fclass::<FP_SIZE>(Self::DATA_TEMP_REGISTER, rhs);
-        self.assembler.andi(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 0b1100000000);
-        unordered_jumps.push(self.make_branch(RelationalCondition::Equal, Self::DATA_TEMP_REGISTER, zero));
+        self.assembler
+            .fclass::<FP_SIZE>(Self::DATA_TEMP_REGISTER, rhs);
+        self.assembler.andi(
+            Self::DATA_TEMP_REGISTER,
+            Self::DATA_TEMP_REGISTER,
+            0b1100000000,
+        );
+        unordered_jumps.push(self.make_branch(
+            RelationalCondition::Equal,
+            Self::DATA_TEMP_REGISTER,
+            zero,
+        ));
 
         match cond {
-            DoubleCondition::EqualAndOrdered
-            | DoubleCondition::EqualOrUnordered => {
+            DoubleCondition::EqualAndOrdered | DoubleCondition::EqualOrUnordered => {
                 self.assembler.feq::<FP_SIZE>(dest, lhs, rhs);
             }
 
-            DoubleCondition::NotEqualAndOrdered
-            | DoubleCondition::NotEqualOrUnordered => {
+            DoubleCondition::NotEqualAndOrdered | DoubleCondition::NotEqualOrUnordered => {
                 self.assembler.feq::<FP_SIZE>(dest, lhs, rhs);
                 self.assembler.xori(dest, dest, 1);
             }
 
-            DoubleCondition::GreaterThanAndOrdered
-            | DoubleCondition::GreaterThanOrUnordered => {
+            DoubleCondition::GreaterThanAndOrdered | DoubleCondition::GreaterThanOrUnordered => {
                 self.assembler.flt::<FP_SIZE>(dest, rhs, lhs);
             }
 
@@ -1024,8 +3107,7 @@ impl MacroAssemblerRISCV64 {
                 self.assembler.fle::<FP_SIZE>(dest, rhs, lhs);
             }
 
-            DoubleCondition::LessThanAndOrdered
-            | DoubleCondition::LessThanOrUnordered => {
+            DoubleCondition::LessThanAndOrdered | DoubleCondition::LessThanOrUnordered => {
                 self.assembler.flt::<FP_SIZE>(dest, lhs, rhs);
             }
 

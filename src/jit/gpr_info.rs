@@ -1,5 +1,7 @@
 //! Calling convention information provider
 use cfg_if::cfg_if;
+
+
 cfg_if! {
     if #[cfg(target_arch="x86_64")]
     {
@@ -141,7 +143,58 @@ cfg_if! {
             }
 
     } else if #[cfg(target_arch="riscv64")] {
+        use crate::assembler::riscv64assembler::*;
+        pub const CALL_FRAME_REGISTER: u8 = fp;
+        pub const NUMBER_TAG_REGISTER: u8 = x25;
+        pub const NOT_CELL_MASK_REGISTER: u8 = x26;
+        pub const CONSTANTS_REGISTER: u8 = x24;
 
+        pub const T0: u8 = x10;
+        pub const T1: u8 = x11;
+        pub const T2: u8 = x12;
+        pub const T3: u8 = x13;
+        pub const T4: u8 = x14;
+        pub const T5: u8 = x15;
+        pub const T6: u8 = x16;
+        pub const T7: u8 = x17;
+        pub const T8: u8 = x5;
+        pub const T9: u8 = x6;
+        pub const T10: u8 = x7;
+        pub const T11: u8 = x28;
+        pub const T12: u8 = x29;
+
+        pub const CS0: u8 = x9;
+        pub const CS1: u8 = x18;
+        pub const CS2: u8 = x19;
+        pub const CS3: u8 = x20;
+        pub const CS4: u8 = x21;
+        pub const CS5: u8 = x22;
+        pub const CS6: u8 = x23;
+        pub const CS7: u8 = x24;
+        pub const CS8: u8 = x25;
+        pub const CS9: u8 = x26;
+        pub const CS10: u8 = x27;
+
+        pub const ARGUMENT_GPR0: u8 = x10;
+        pub const ARGUMENT_GPR1: u8 = x11;
+        pub const ARGUMENT_GPR2: u8 = x12;
+        pub const ARGUMENT_GPR3: u8 = x13;
+        pub const ARGUMENT_GPR4: u8 = x14;
+        pub const ARGUMENT_GPR5: u8 = x15;
+        pub const ARGUMENT_GPR6: u8 = x16;
+        pub const ARGUMENT_GPR7: u8 = x17;
+        
+        pub const NON_ARG_GPR0: u8 = x5;
+        pub const NON_ARG_GPR1: u8 = x6;
+
+        pub const RETURN_VALUE_GPR: u8 = x10;
+        pub const RETURN_VALUE_GPR2: u8 = x11; 
+
+        pub const NON_PRESERVED_NON_RETURN_GPR: u8 = x12;
+        pub const NON_PRESERVED_NON_ARGUMENT_GPR0: u8 = x5;
+        pub const NON_PRESERVED_NON_ARGUMENT_GPR1: u8 = x6;
+
+        pub const PATCHPOINT_SCRATCH_REGISTER: u8 = x30;
     } else {
         compile_error!("Unsupported architecture")
     }

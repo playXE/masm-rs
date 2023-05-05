@@ -1,4 +1,3 @@
-
 use std::io::Read;
 use std::io::Write;
 
@@ -7,9 +6,11 @@ use macroassembler::assembler::abstract_macro_assembler::Address;
 use macroassembler::assembler::abstract_macro_assembler::Jump;
 use macroassembler::assembler::abstract_macro_assembler::Label;
 use macroassembler::assembler::link_buffer::LinkBuffer;
-use macroassembler::assembler::macro_assembler_x86_common::*;
-use macroassembler::assembler::x86assembler::*;
+use macroassembler::assembler::*;
+use macroassembler::assembler::RelationalCondition;
+use macroassembler::jit::gpr_info::*;
 use macroassembler::wtf::executable_memory_handle::CodeRef;
+use macroassembler::jit::helpers::AssemblyHelpers;
 
 pub struct BfJIT {
     ctx: CGContext,
@@ -109,6 +110,7 @@ impl BfJIT {
                     ret.push(Token::LoopToZero);
                     i += 3;
                 }
+                //#[cfg(target_arch="x86_64")]
                 [Token::LoopBegin, Token::Sub(1), Token::Forward(1), Token::Add(1), Token::Backward(1), Token::LoopEnd, ..] =>
                 {
                     ret.push(Token::LoopToAdd);
@@ -126,91 +128,112 @@ impl BfJIT {
     fn do_translate(&self, disasm: bool, input: &[Token]) -> CodeRef {
         let mut jmps_to_end: Vec<(Label, Jump)> = vec![];
 
-        let mut masm = MacroAssemblerX86Common::new();
-      
+        let mut masm = TargetMacroAssembler::new();
+        masm.emit_function_prologue();
+        masm.mov(ARGUMENT_GPR0, NON_PRESERVED_NON_RETURN_GPR);
         for t in input {
             match *t {
                 Token::Forward(n) => {
                     masm.comment(format!("forward {}", n));
-                    masm.add64(n as i32, edi);
+                    masm.add64(n as i32, NON_PRESERVED_NON_RETURN_GPR);
                 }
                 Token::Backward(n) => {
                     masm.comment(format!("backward {}", n));
-                    masm.sub64(n as i32, edi);
+                    masm.sub64(n as i32, NON_PRESERVED_NON_RETURN_GPR);
                 }
                 Token::Add(n) => {
                     masm.comment(format!("add {}", n));
-                    masm.add8(n as i32, Address::new(edi, 0));
+                    masm.load8_signed_extend_to_32(Address::new(NON_PRESERVED_NON_RETURN_GPR, 0), T0);
+                    masm.add32(n as i32, T0);
+                    masm.store8(T0, Address::new(NON_PRESERVED_NON_RETURN_GPR, 0));
                 }
                 Token::Sub(n) => {
                     masm.comment(format!("sub {}", n));
-                    masm.sub8(n as i32, Address::new(edi, 0));
+                    masm.load8_signed_extend_to_32(Address::new(NON_PRESERVED_NON_RETURN_GPR, 0), T0);
+                    masm.add32(-(n as i32), T0);
+                    masm.store8(T0, Address::new(NON_PRESERVED_NON_RETURN_GPR, 0));
                 }
 
                 Token::Output => {
                     masm.comment("output");
-                    masm.assembler.push_r(edi);
-                    masm.load8_signed_extend_to_32(Address::new(edi, 0), edi);
+
+                    masm.load8_signed_extend_to_32(
+                        Address::new(NON_PRESERVED_NON_RETURN_GPR, 0),
+                        ARGUMENT_GPR0,
+                    );
+                    masm.push(NON_PRESERVED_NON_RETURN_GPR);
                     masm.call_op(Some(AbsoluteAddress::new(putchar as _)));
-                    masm.assembler.pop_r(edi);
+                    masm.pop(NON_PRESERVED_NON_RETURN_GPR);
                 }
 
                 Token::Input => {
                     masm.comment("input");
-                    masm.assembler.push_r(edi);
+
                     masm.call_op(Some(AbsoluteAddress::new(getchr as _)));
-                    masm.assembler.pop_r(edi);
-                    masm.store8(eax, Address::new(edi, 0));
+
+                    masm.store8(
+                        RETURN_VALUE_GPR,
+                        Address::new(NON_PRESERVED_NON_RETURN_GPR, 0),
+                    );
                 }
 
                 Token::LoopBegin => {
                     masm.comment("loop begin");
-                    let jend = masm.branch8(RelationalCondition::Equal, Address::new(edi, 0), 0);
+                    let jend = masm.branch8(
+                        RelationalCondition::Equal,
+                        Address::new(NON_PRESERVED_NON_RETURN_GPR, 0),
+                        0,
+                    );
                     let start = masm.label();
 
                     jmps_to_end.push((start, jend));
                 }
 
                 Token::LoopEnd => {
-                    
                     masm.comment("loop end");
                     let (start, jend) = jmps_to_end.pop().unwrap();
-                   
-                    masm.load8_signed_extend_to_32(Address::new(edi, 0), eax);
-                    
-                    let j = masm.branch32(RelationalCondition::NotEqual, eax, 0i32);
+
+                    masm.load8_signed_extend_to_32(
+                        Address::new(NON_PRESERVED_NON_RETURN_GPR, 0),
+                        T0,
+                    );
+
+                    let j = masm.branch32(RelationalCondition::NotEqual, T0, 0i32);
                     j.link_to(&mut masm, start);
                     jend.link(&mut masm);
                 }
 
                 Token::LoopToZero => {
                     masm.comment("loop to zero");
-                    masm.store8(0i32, Address::new(edi, 0));
+                    masm.store8(0i32, Address::new(NON_PRESERVED_NON_RETURN_GPR, 0));
                 }
 
                 Token::LoopToAdd => {
                     masm.comment("loop to add");
-                    masm.load8(Address::new(edi, 0), esi);
-                    masm.add32(esi, Address::new(edi, 1));
-                    masm.store8(0i32, Address::new(edi, 0));
+                    masm.load8(Address::new(NON_PRESERVED_NON_RETURN_GPR, 0), T0);
+                    masm.load8(Address::new(NON_PRESERVED_NON_RETURN_GPR, 1), T1);
+                    masm.add32(T0, T1);
+                    masm.store8(0i32, Address::new(NON_PRESERVED_NON_RETURN_GPR, 0));
+                    masm.store8(T1, Address::new(NON_PRESERVED_NON_RETURN_GPR, 1));
                 }
             }
         }
-        
+        masm.emit_function_epilogue();
         masm.ret();
         assert!(jmps_to_end.is_empty());
         let mut buffer = LinkBuffer::from_macro_assembler(&mut masm);
 
         let mut fmt = String::new();
 
-        let code = buffer.finalize_with_disassembly(disasm, "brainfuck", &mut fmt).unwrap();
+        let code = buffer
+            .finalize_with_disassembly(disasm, "brainfuck", &mut fmt)
+            .unwrap();
 
         println!("{}", fmt);
 
         code
     }
 }
-
 
 extern "C" fn putchar(x: u8) {
     let mut out = ::std::io::stdout();
@@ -222,7 +245,6 @@ extern "C" fn getchr() -> u8 {
     std::io::stdin().read_exact(&mut buf).unwrap();
     buf[0]
 }
-
 
 use pico_args::*;
 use std::ffi::OsStr;
@@ -255,16 +277,16 @@ fn main() {
 
     let code = jit.translate(disasm, &std::fs::read_to_string(input).unwrap());
 
-   
+    println!(
+        "Compiled in {:.2}ms",
+        compile_start.elapsed().as_micros() as f64 / 1000.0
+    );
 
-    println!("Compiled in {:.2}ms", compile_start.elapsed().as_micros() as f64 / 1000.0);
 
-    let fun = unsafe {
-        std::mem::transmute::<_, extern "C" fn(*mut u8)>(code.start())
-    };
+
+    let fun = unsafe { std::mem::transmute::<_, extern "C" fn(*mut u8)>(code.start()) };
     let mut mem = vec![0u8; 100 * 1024];
     fun(mem.as_mut_ptr());
 
     drop(code);
-    
 }

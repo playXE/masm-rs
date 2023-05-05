@@ -11,7 +11,7 @@ use super::{
     abstract_macro_assembler::{AbstractMacroAssembler, Label, Location, PatchableJump, Jump, JumpList, DataLabelPtr},
     assembly_comments::{AssemblyCommentsRegistry, CommentMap},
     buffer::AssemblerLabel,
-    TargetMacroAssembler, disassembler::try_to_disassemble,
+    TargetMacroAssembler, disassembler::try_to_disassemble, TargetAssembler,
 };
 use std::sync::Arc;
 
@@ -146,21 +146,21 @@ impl LinkBuffer {
 
     pub fn link_jump(&mut self, jump: Jump, target: *const u8) {
         unsafe {
-            TargetMacroAssembler::link_jump(self.code(), jump, target);
+            TargetAssembler::link_jump_(self.code(), jump.label, target as *mut u8);
         }
     }
 
     pub fn link_jumps(&mut self, jump: &JumpList, target: *const u8) {
         unsafe {
             for jump in jump.jumps() {
-                TargetMacroAssembler::link_jump(self.code(), *jump, target);
+                TargetAssembler::link_jump_(self.code(), jump.label, target as *mut u8);
             }
         }
     }
 
     pub fn patch(&mut self, label: DataLabelPtr, value: *const u8) {
         unsafe {
-            TargetMacroAssembler::link_pointer(self.code(), label.label, value);
+            TargetAssembler::link_pointer(self.code(), label.label, value as *mut u8);
         }
     }
 
@@ -181,6 +181,8 @@ impl LinkBuffer {
         unsafe {
             std::ptr::copy_nonoverlapping(buffer.as_ptr(), self.code, buffer.len());
         }
+
+       
 
         self.link_tasks = std::mem::take(&mut macro_assembler.link_tasks);
         self.late_link_tasks = std::mem::take(&mut macro_assembler.late_link_tasks);
@@ -213,7 +215,7 @@ impl LinkBuffer {
 
         let executable_address = result.start();
         let executable_end = result.end();
-
+       
         write!(out, "    Code at [{:p}, {:p}){}\n", executable_address, executable_end, if just_dumping_header {
             "."
         } else {
@@ -249,12 +251,14 @@ impl LinkBuffer {
             initial_size = macro_assembler.code_size();
         }
 
+        
+
         let memory = allocate_executable_memory(initial_size, 16);
 
         self.size = (memory.end() - memory.start()) as usize;
         self.did_allocate = true;
         self.code = memory.start() as _;
-        self.executable_memory = Some(ExecutableMemoryHandle::new(memory));
+        self.executable_memory = Some(ExecutableMemoryHandle::new(memory, initial_size));
       
     }
 

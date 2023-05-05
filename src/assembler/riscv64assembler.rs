@@ -202,9 +202,9 @@ macro_rules! decl_immediate {
         impl $name {
             pub const IMMEDIATE_SIZE: usize = $immediate_size;
 
-            pub fn immediate_mask<T: num::PrimInt + num::NumCast>() -> T {
+            pub fn immediate_mask<T:  num_traits::WrappingSub + num::PrimInt + num::NumCast>() -> T {
                 if $immediate_size < std::mem::size_of::<u32>() * 8 {
-                    T::from(1u64.wrapping_shl($immediate_size as u32)).unwrap() - T::one()
+                    T::from(1u64.wrapping_shl($immediate_size as u32)).unwrap().wrapping_sub(&T::one())
                 } else {
                     T::max_value()
                 }
@@ -232,8 +232,8 @@ macro_rules! decl_immediate {
                 T::from(imm_value & mask).unwrap()
             }
 
-            pub const fn field<const FIELD_START: usize, const FIELD_END: usize>(self) -> u32 {
-                (self.value >> FIELD_START) & ((1 << (FIELD_END - FIELD_START)) - 1)
+            pub const fn field<const FIELD_START: usize, const FIELD_SIZE: usize>(self) -> u32 {
+                (self.value >> FIELD_START) & ((1 << FIELD_SIZE) - 1)
             }
 
             $value
@@ -1395,6 +1395,10 @@ impl RISCV64Assembler {
         self.insn(LHU::construct(rd, rs1, IImmediate::v32(imm)));
     }
 
+    pub fn lwu(&mut self, rd: u8, rs1: u8, imm: i32) {
+        self.insn(LWU::construct(rd, rs1, IImmediate::v32(imm)));
+    }
+
     pub fn sb(&mut self, rs1: u8, rs2: u8, imm: i32) {
         self.insn(SB::construct(rs1, rs2, SImmediate::v32(imm)));
     }
@@ -1571,6 +1575,10 @@ impl RISCV64Assembler {
         self.insn(MULHU::construct(rd, rs1, rs2));
     }
 
+    pub fn mulw(&mut self, rd: u8, rs1: u8, rs2: u8) {
+        self.insn(MULW::construct(rd, rs1, rs2));
+    }
+
     pub fn div(&mut self, rd: u8, rs1: u8, rs2: u8) {
         self.insn(DIV::construct(rd, rs1, rs2));
     }
@@ -1579,12 +1587,20 @@ impl RISCV64Assembler {
         self.insn(DIVU::construct(rd, rs1, rs2));
     }
 
+    pub fn divw(&mut self, rd: u8, rs1: u8, rs2: u8) {
+        self.insn(DIVW::construct(rd, rs1, rs2));
+    }
+
     pub fn rem(&mut self, rd: u8, rs1: u8, rs2: u8) {
         self.insn(REM::construct(rd, rs1, rs2));
     }
 
     pub fn remu(&mut self, rd: u8, rs1: u8, rs2: u8) {
         self.insn(REMU::construct(rd, rs1, rs2));
+    }
+
+    pub fn remw(&mut self, rd: u8, rs1: u8, rs2: u8) {
+        self.insn(REMW::construct(rd, rs1, rs2));
     }
 
     pub fn flw(&mut self, rd: u8, rs1: u8, imm: i32) {
@@ -2341,7 +2357,7 @@ impl ImmediateLoader {
     pub fn move_into(&self, assembler: &mut RISCV64Assembler, dest: u8) {
         // This is a helper method that generates the necessary instructions through the RISCV64Assembler infrastructure.
         // Operations are traversed in reverse in order to match the generation process.
-        println!("Loading immediate: {:#x} {}", self.ops[0].value, self.opcount);
+       
         for i in 0..self.opcount {
             let op = self.ops[self.opcount - (i + 1)];
 

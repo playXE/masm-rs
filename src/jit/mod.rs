@@ -6,6 +6,7 @@ use vm_allocator::RangeInclusive;
 use crate::wtf::virtual_memory::{Protection, VirtualMemory};
 
 pub mod fpr_info;
+pub mod helpers;
 pub mod gpr_info;
 
 /// Simple executable memory allocator. It uses `vm-allocator` crate to allocate memory. 

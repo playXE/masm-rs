@@ -5582,7 +5582,7 @@ impl X86InstructionFormatter {
 
     pub fn one_byte_op8_mem(&mut self, op: u8, reg: u8, base: u8, offset: i32) {
         let mut writer = SingleInstructionBufferWriter::new(&mut self.buffer);
-        writer.emit_rex_if(Self::byte_reg_requires_rex(reg), reg, 0, base);
+        writer.emit_rex_if(Self::byte_reg_requires_rex_2(reg, base), reg, 0, base);
         writer.put_byte_unchecked(op as _);
         writer.memory_modrm(reg, base, offset);
     }

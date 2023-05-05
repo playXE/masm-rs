@@ -872,6 +872,5 @@ pub fn try_to_disassemble(
         )?;
         i += 4;
     }
-
     Ok(())
 }

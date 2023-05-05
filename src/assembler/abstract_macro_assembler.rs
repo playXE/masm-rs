@@ -656,6 +656,7 @@ impl AbstractMacroAssembler {
 
     pub fn pad_before_patch(&mut self) {
         let _ = self.label();
+        
     }
 }
 

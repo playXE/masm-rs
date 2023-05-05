@@ -21,7 +21,7 @@ cfg_if! {
         pub mod x86assembler;
         pub mod macro_assembler_x86_common;
         pub mod macro_assembler_x86_64;
-
+        pub use macro_assembler_x86_common::{RelationalCondition, DoubleCondition, ResultCondition};
         pub type TargetAssembler = x86assembler::X86Assembler;
         pub type TargetMacroAssembler = macro_assembler_x86_common::MacroAssemblerX86Common;
     } else if #[cfg(target_arch="riscv64")] {
@@ -30,6 +30,7 @@ cfg_if! {
         pub mod riscv64assembler;
         pub mod macro_assembler_riscv64;
         pub mod riscv64disassembler;
+        pub use macro_assembler_riscv64::{RelationalCondition, ZeroCondition, DoubleCondition, ResultCondition};
         pub type TargetAssembler = riscv64assembler::RISCV64Assembler;
         pub type TargetMacroAssembler = macro_assembler_riscv64::MacroAssemblerRISCV64;
     } else {

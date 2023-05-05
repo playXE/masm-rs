@@ -4,15 +4,14 @@ use vm_allocator::RangeInclusive;
 
 use crate::{assembler::assembly_comments::AssemblyCommentsRegistry, jit::free_executable_memory};
 
-
-
 pub struct ExecutableMemoryHandle {
     vmem: RangeInclusive,
+    size: usize,
 }
 
 impl ExecutableMemoryHandle {
-    pub(crate) fn new(vmem: RangeInclusive) -> Arc<Self> {
-        Arc::new(ExecutableMemoryHandle { vmem })
+    pub(crate) fn new(vmem: RangeInclusive, size: usize) -> Arc<Self> {
+        Arc::new(ExecutableMemoryHandle { vmem, size })
     }
 
     pub fn contains(&self, address: *const u8) -> bool {
@@ -27,7 +26,7 @@ impl ExecutableMemoryHandle {
     }
 
     pub fn size_in_bytes(&self) -> usize {
-        (self.vmem.end() - self.vmem.start()) as usize
+        self.size
     }
 
     pub fn end(&self) -> *mut u8 {
@@ -37,11 +36,11 @@ impl ExecutableMemoryHandle {
 
 impl Drop for ExecutableMemoryHandle {
     fn drop(&mut self) {
-        AssemblyCommentsRegistry::singleton().unregister_code_range(self.vmem.start() as _, self.vmem.end() as _);
+        AssemblyCommentsRegistry::singleton()
+            .unregister_code_range(self.vmem.start() as _, self.vmem.end() as _);
         free_executable_memory(self.vmem);
     }
 }
-
 
 #[derive(Clone)]
 pub enum CodeRef {
@@ -93,5 +92,3 @@ impl CodeRef {
 pub trait Function<R, A> {
     fn call(&self, args: A) -> R;
 }
-
-
