@@ -1824,6 +1824,20 @@ impl MacroAssemblerX86Common {
         self.assembler.cvtss2siq_rr(src, dest)
     }
 
+    pub fn truncate_float_to_uint64(&mut self, src: u8, dest: u8, scratch: u8, int64_min: u8) {
+        let large = self.branch_float(DoubleCondition::GreaterThanOrEqualAndOrdered, src, int64_min);
+        self.assembler.cvtss2siq_rr(src, dest);
+        let done = self.jump();
+        large.link(self);
+
+        self.move_double(src, scratch);
+        self.assembler.subss_rr(int64_min, scratch);
+        self.assembler.cvtss2siq_rr(scratch, dest);
+        self.assembler.movq_i64r(0x8000000000000000u64 as i64, Self::SCRATCH_REGISTER);
+        self.assembler.orq_rr(Self::SCRATCH_REGISTER, dest);
+        done.link(self);
+    }
+
     pub fn truncate_float_to_int64(&mut self, src: u8, dest: u8) {
         self.assembler.cvtss2siq_rr(src, dest)
     }

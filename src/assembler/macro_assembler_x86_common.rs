@@ -4,7 +4,7 @@ use crate::assembler::abstract_macro_assembler::AbsoluteAddress;
 
 use super::abstract_macro_assembler::{
     AbstractMacroAssembler, Address, BaseIndex, Call, DataLabelCompact, Extend, Jump, Operand,
-    Scale,
+    Scale, JumpList,
 };
 use super::buffer::AssemblerLabel;
 use super::x86assembler::*;
@@ -2016,7 +2016,7 @@ impl MacroAssemblerX86Common {
         }
     }
 
-    pub fn div_double(&mut self, src: impl Into<Operand>, dst: u8) {
+    pub fn div_double_rr(&mut self, src: impl Into<Operand>, dst: u8) {
         match src.into() {
             Operand::Register(src) => {
                 self.assembler.divsd_rr(src, dst);
@@ -2030,14 +2030,14 @@ impl MacroAssemblerX86Common {
         }
     }
 
-    pub fn div_double_rrr(&mut self, op1: u8, op2: u8, dst: u8) {
+    pub fn div_double(&mut self, op1: u8, op2: u8, dst: u8) {
         // B := A / B is invalid.
         assert!(op1 == dst || op2 != dst);
         self.move_double(op1, dst);
-        self.div_double(op2, dst);
+        self.div_double_rr(op2, dst);
     }
 
-    pub fn div_float(&mut self, src: impl Into<Operand>, dst: u8) {
+    pub fn div_float_rr(&mut self, src: impl Into<Operand>, dst: u8) {
         match src.into() {
             Operand::Register(src) => {
                 self.assembler.divss_rr(src, dst);
@@ -2051,11 +2051,11 @@ impl MacroAssemblerX86Common {
         }
     }
 
-    pub fn div_float_rrr(&mut self, op1: u8, op2: u8, dst: u8) {
+    pub fn div_float(&mut self, op1: u8, op2: u8, dst: u8) {
         // B := A / B is invalid.
         assert!(op1 == dst || op2 != dst);
         self.move_double(op1, dst);
-        self.div_float(op2, dst);
+        self.div_float_rr(op2, dst);
     }
 
     pub fn sub_double(&mut self, op1: u8, op2: impl Into<Operand>, dst: u8) {
@@ -2359,6 +2359,18 @@ impl MacroAssemblerX86Common {
         self.jump_after_floating_point_compare(cond, left, right)
     }
 
+    pub fn branch_double_non_zero(&mut self, reg: u8, scratch: u8) -> Jump {
+        self.assembler.xorpd_rr(scratch, scratch);
+        self.branch_double(DoubleCondition::NotEqualAndOrdered, reg, scratch)
+    }
+
+    pub fn branch_double_zero_or_nan(&mut self, reg: u8, scratch: u8) -> Jump {
+        self.assembler.xorpd_rr(scratch, scratch);
+        self.branch_double(DoubleCondition::EqualOrUnordered, reg, scratch)
+    }
+
+
+
     pub fn compare_double(&mut self, cond: DoubleCondition, left: u8, right: u8, dest: u8) {
         self.floating_point_compare(cond, left, right, dest, |this, arg1, arg2| {
             this.assembler.ucomisd_rr(arg1, arg2);
@@ -2399,6 +2411,42 @@ impl MacroAssemblerX86Common {
 
             op => unreachable!("{:?}", op),
         }
+    }
+    /// Truncates 'src' to an integer, and places the resulting 'dest'.
+    /// If the result is not representable as a 32 bit value, branch.
+    /// May also branch for some values that are representable in 32 bits
+    /// (specifically, in this case, `i32::MIN`).
+    pub fn branch_truncate_double_to_int32(&mut self, src: u8, dest: u8, branch_if_truncate_successful: bool) -> Jump {
+        self.assembler.cvttsd2si_rr(src, dest);
+        self.branch32(
+            if branch_if_truncate_successful {
+                RelationalCondition::NotEqual
+            } else {
+                RelationalCondition::Equal
+            },
+            dest,
+            0x80000000u32 as i32,
+        )
+    }
+    /// Convert 'src' to an integer, and places the resulting 'dest'.
+    /// If the result is not representable as a 32 bit value, branch.
+    /// May also branch for some values that are representable in 32 bits
+    /// (specifically, in this case, 0).
+    pub fn branch_convert_double_to_int32(&mut self, src: u8, dest: u8, failure_cases: &mut JumpList, fp_temp: u8, neg_zero_check: bool)  {
+        self.assembler.cvttsd2si_rr(src, dest);
+
+        if neg_zero_check {
+            let value_is_non_zero = self.branch_test32(ResultCondition::NotZero, dest, dest);
+            self.assembler.movmskpd_rr(src, Self::SCRATCH_REGISTER);
+            failure_cases.push(self.branch_test32(ResultCondition::NotZero, Self::SCRATCH_REGISTER, 1i32));
+            value_is_non_zero.link(self);
+        }
+
+        // Convert the integer result back to float & compare to the original value - if not equal or unordered (NaN) then jump.
+        self.convert_int32_to_double(src, fp_temp);
+        self.assembler.ucomisd_rr(src, fp_temp);
+        failure_cases.push(Jump::new(self.assembler.jp()));
+        failure_cases.push(Jump::new(self.assembler.jne()));
     }
 
     pub fn swap(&mut self, r1: u8, r2: u8) {

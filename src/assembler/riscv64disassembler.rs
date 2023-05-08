@@ -408,7 +408,7 @@ impl RTypeWithRoundingModeFCVTFormatting {
         disasm! {
             f2i: (FCVT_L_S, FCVT_LU_S, FCVT_W_S, FCVT_WU_S, FCVT_L_D, FCVT_LU_D, FCVT_W_D, FCVT_WU_D),
             f2f: (FCVT_S_D, FCVT_D_S),
-            i2f: (FCVT_W_S, FCVT_WU_S, FCVT_D_S, FCVT_D_WU)
+            i2f: (FCVT_W_S, FCVT_WU_S, FCVT_D_S, FCVT_D_WU, FCVT_S_W, FCVT_D_W)
         }
     }
 
@@ -431,7 +431,7 @@ impl RTypeWithRoundingModeFCVTFormatting {
         matches! {
             f2i: (FCVT_L_S, FCVT_LU_S, FCVT_W_S, FCVT_WU_S, FCVT_L_D, FCVT_LU_D, FCVT_W_D, FCVT_WU_D),
             f2f: (FCVT_S_D, FCVT_D_S),
-            i2f: (FCVT_W_S, FCVT_WU_S, FCVT_D_S, FCVT_D_WU)
+            i2f: (FCVT_S_W, FCVT_D_W, FCVT_W_S, FCVT_WU_S, FCVT_D_S, FCVT_D_WU)
         }
     }
 }

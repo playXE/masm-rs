@@ -1783,12 +1783,13 @@ impl RISCV64Assembler {
         if FP_SIZE == 32 {
             self.insn(FCVT_S_W::construct(rd, rs1, rm));
         } else {
-            self.insn(FCVT_S_L::construct(rd, rs1, rm));
+            self.insn(FCVT_D_W::construct(rd, rs1, rm));
         }
     }
 
     pub fn fcvt_ui2fp<const FP_SIZE: usize>(&mut self, rd: u8, rs1: u8, rm: FPRoundingMode) {
         if FP_SIZE == 32 {
+            
             self.insn(FCVT_S_WU::construct(rd, rs1, rm));
         } else {
             self.insn(FCVT_S_LU::construct(rd, rs1, rm));
@@ -1819,7 +1820,7 @@ impl RISCV64Assembler {
         }
     }
 
-    pub fn fence(&mut self, pred: &[MemoryOperation], succ: &[MemoryAccess]) {
+    pub fn fence(&mut self, pred: &[MemoryOperation], succ: &[MemoryOperation]) {
         let mut pred_val = 0;
 
         for op in pred.iter() {
