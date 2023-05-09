@@ -3,6 +3,8 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
+use num_traits::ops::inv;
+
 use super::{abstract_macro_assembler::*, buffer::AssemblerLabel, riscv64assembler::*};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -3813,7 +3815,8 @@ impl MacroAssemblerRISCV64 {
 
     pub fn convert_float_to_double(&mut self, src: u8, dest: u8) {
         self.assembler.fmv_fp2i::<32>(Self::DATA_TEMP_REGISTER, src);
-        self.assembler.fmv_i2fp::<64>(dest, Self::DATA_TEMP_REGISTER);
+        self.assembler
+            .fmv_i2fp::<64>(dest, Self::DATA_TEMP_REGISTER);
         self.assembler
             .fcvt_fp2fp::<64, 32>(dest, dest, FPRoundingMode::DYN);
     }
@@ -3962,27 +3965,50 @@ impl MacroAssemblerRISCV64 {
             expected_and_clobbered,
             expected_and_clobbered,
         );
-        self.assembler.xor(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, new_value);
-        self.assembler.slli(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 64 - BIT_SIZE as u32);
-        failure.push(self.make_branch(RelationalCondition::NotEqual, Self::DATA_TEMP_REGISTER, zero));
+        self.assembler.xor(
+            Self::DATA_TEMP_REGISTER,
+            Self::DATA_TEMP_REGISTER,
+            new_value,
+        );
+        self.assembler.slli(
+            Self::DATA_TEMP_REGISTER,
+            Self::DATA_TEMP_REGISTER,
+            64 - BIT_SIZE as u32,
+        );
+        failure.push(self.make_branch(
+            RelationalCondition::NotEqual,
+            Self::DATA_TEMP_REGISTER,
+            zero,
+        ));
 
         // The corresponding store-conditional remains. The 32-bit word, containing the new value after
         // the XOR, is located in the upper 32 bits of the expected-value register. That can be shifted
         // down and then used in the store-conditional instruction.
-        self.assembler.srli(expected_and_clobbered, expected_and_clobbered, 32);
-        self.assembler.scw(Self::DATA_TEMP_REGISTER, Self::MEMORY_TEMP_REGISTER, expected_and_clobbered, &[MemoryAccess::AcquireRelease]);
+        self.assembler
+            .srli(expected_and_clobbered, expected_and_clobbered, 32);
+        self.assembler.scw(
+            Self::DATA_TEMP_REGISTER,
+            Self::MEMORY_TEMP_REGISTER,
+            expected_and_clobbered,
+            &[MemoryAccess::AcquireRelease],
+        );
 
-         // On successful store, the temp register will have a zero value, and a non-zero value otherwise.
+        // On successful store, the temp register will have a zero value, and a non-zero value otherwise.
         // Branches are produced accordingly.
         if is_failure {
-            failure.push(self.make_branch(RelationalCondition::NotEqual, Self::DATA_TEMP_REGISTER, zero));
+            failure.push(self.make_branch(
+                RelationalCondition::NotEqual,
+                Self::DATA_TEMP_REGISTER,
+                zero,
+            ));
             failure
         } else {
-            let success = self.make_branch(RelationalCondition::Equal, Self::DATA_TEMP_REGISTER, zero);
+            let success =
+                self.make_branch(RelationalCondition::Equal, Self::DATA_TEMP_REGISTER, zero);
             failure.link(self);
             let mut ls = JumpList::new();
             ls.push(success);
-            ls 
+            ls
         }
     }
 
@@ -4055,6 +4081,430 @@ impl MacroAssemblerRISCV64 {
         self.assembler.ld(dest1, sp, 0);
         self.assembler.ld(dest2, sp, 8);
         self.assembler.addi(sp, sp, 16);
+    }
+
+    pub fn move_conditionally32(
+        &mut self,
+        cond: RelationalCondition,
+        left: u8,
+        right: u8,
+        src: u8,
+        dest: u8,
+    ) {
+        self.assembler
+            .sign_extend(Self::DATA_TEMP_REGISTER, left, 32);
+        self.assembler
+            .sign_extend(Self::MEMORY_TEMP_REGISTER, right, 32);
+
+        self.branch_for_move_conditionally(
+            Self::invert(cond),
+            Self::DATA_TEMP_REGISTER,
+            Self::MEMORY_TEMP_REGISTER,
+            8,
+        );
+        self.assembler.addi(dest, src, 0);
+    }
+
+    pub fn move_conditionally32_then_else(
+        &mut self,
+        cond: RelationalCondition,
+        left: u8,
+        right: impl Into<Operand>,
+        then_case: u8,
+        else_case: u8,
+        dest: u8,
+    ) {
+        self.assembler
+            .sign_extend(Self::DATA_TEMP_REGISTER, left, 32);
+        match right.into() {
+            Operand::Register(right) => {
+                self.assembler
+                    .sign_extend(Self::MEMORY_TEMP_REGISTER, right, 32);
+            }
+
+            Operand::Imm32(imm) => self.load_immediate32(imm, Self::MEMORY_TEMP_REGISTER),
+
+            _ => unreachable!(),
+        }
+
+        self.branch_for_move_conditionally(
+            cond,
+            Self::DATA_TEMP_REGISTER,
+            Self::MEMORY_TEMP_REGISTER,
+            12,
+        );
+        self.assembler.addi(dest, then_case, 0);
+        self.assembler.jal(zero, 8);
+        self.assembler.addi(dest, else_case, 0);
+    }
+
+    pub fn move_conditionally64(
+        &mut self,
+        cond: RelationalCondition,
+        left: u8,
+        right: u8,
+        src: u8,
+        dest: u8,
+    ) {
+        self.branch_for_move_conditionally(Self::invert(cond), left, right, 8);
+        self.assembler.addi(dest, src, 0);
+    }
+
+    pub fn move_conditionally64_then_else(
+        &mut self,
+        cond: RelationalCondition,
+        left: u8,
+        right: impl Into<Operand>,
+        then_case: u8,
+        else_case: u8,
+        dest: u8,
+    ) {
+        let right = match right.into() {
+            Operand::Register(right) => right,
+
+            Operand::Imm32(imm) => {
+                self.load_immediate32(imm, Self::DATA_TEMP_REGISTER);
+                Self::DATA_TEMP_REGISTER
+            }
+
+            _ => unreachable!(),
+        };
+
+        self.branch_for_move_conditionally(cond, left, right, 12);
+        self.assembler.addi(dest, then_case, 0);
+        self.assembler.jal(zero, 8);
+        self.assembler.addi(dest, else_case, 0);
+    }
+
+    pub fn move_conditionally_float(
+        &mut self,
+        cond: DoubleCondition,
+        lhs: u8,
+        rhs: u8,
+        src: u8,
+        dest: u8,
+    ) {
+        let invcond_branch = self.branch_fp::<32, true>(cond, lhs, rhs);
+        self.assembler.addi(dest, src, 0);
+        invcond_branch.link(self);
+    }
+
+    pub fn move_conditionally_float_then_else(
+        &mut self,
+        cond: DoubleCondition,
+        lhs: u8,
+        rhs: u8,
+        then_case: u8,
+        else_case: u8,
+        dest: u8,
+    ) {
+        let invcond_branch = self.branch_fp::<32, true>(cond, lhs, rhs);
+        self.assembler.addi(dest, then_case, 0);
+        let end = self.jump();
+        invcond_branch.link(self);
+        self.assembler.addi(dest, else_case, 0);
+        end.link(self);
+    }
+
+    pub fn move_conditionally_double(
+        &mut self,
+        cond: DoubleCondition,
+        lhs: u8,
+        rhs: u8,
+        src: u8,
+        dest: u8,
+    ) {
+        let invcond_branch = self.branch_fp::<64, true>(cond, lhs, rhs);
+        self.assembler.addi(dest, src, 0);
+        invcond_branch.link(self);
+    }
+
+    pub fn move_conditionally_double_then_else(
+        &mut self,
+        cond: DoubleCondition,
+        lhs: u8,
+        rhs: u8,
+        then_case: u8,
+        else_case: u8,
+        dest: u8,
+    ) {
+        let invcond_branch = self.branch_fp::<64, true>(cond, lhs, rhs);
+        self.assembler.addi(dest, then_case, 0);
+        let end = self.jump();
+        invcond_branch.link(self);
+        self.assembler.addi(dest, else_case, 0);
+        end.link(self);
+    }
+
+    pub fn move_conditionally_test32(
+        &mut self,
+        cond: ResultCondition,
+        left: u8,
+        right: impl Into<Operand>,
+        src: u8,
+        dest: u8,
+    ) {
+        let right = match right.into() {
+            Operand::Register(right) => right,
+
+            Operand::Imm32(imm) => {
+                self.load_immediate32(imm, Self::DATA_TEMP_REGISTER);
+                Self::DATA_TEMP_REGISTER
+            }
+
+            _ => unreachable!(),
+        };
+
+        self.assembler.and(Self::DATA_TEMP_REGISTER, left, right);
+        self.assembler
+            .sign_extend(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 32);
+        self.test_finalize(cond, Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER);
+        self.assembler.beq(Self::DATA_TEMP_REGISTER, zero, 8);
+        self.assembler.addi(dest, src, 0);
+    }
+
+    pub fn move_conditionally_test32_then_else(
+        &mut self,
+        cond: ResultCondition,
+        left: u8,
+        right: impl Into<Operand>,
+        then_case: u8,
+        else_case: u8,
+        dest: u8,
+    ) {
+        let right = match right.into() {
+            Operand::Register(right) => right,
+
+            Operand::Imm32(imm) => {
+                self.load_immediate32(imm, Self::DATA_TEMP_REGISTER);
+                Self::DATA_TEMP_REGISTER
+            }
+
+            _ => unreachable!(),
+        };
+
+        self.assembler.and(Self::DATA_TEMP_REGISTER, left, right);
+        self.assembler
+            .sign_extend(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 32);
+        self.test_finalize(cond, Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER);
+        self.assembler.beq(Self::DATA_TEMP_REGISTER, zero, 12);
+        self.assembler.addi(dest, then_case, 0);
+        self.assembler.jal(zero, 8);
+        self.assembler.addi(dest, else_case, 0);
+    }
+
+    pub fn move_conditionally_test64(
+        &mut self,
+        cond: ResultCondition,
+        left: u8,
+        right: impl Into<Operand>,
+        src: u8,
+        dest: u8,
+    ) {
+        let right = match right.into() {
+            Operand::Register(right) => right,
+
+            Operand::Imm32(imm) => {
+                self.load_immediate32(imm, Self::DATA_TEMP_REGISTER);
+                Self::DATA_TEMP_REGISTER
+            }
+
+            _ => unreachable!(),
+        };
+
+        self.assembler.and(Self::DATA_TEMP_REGISTER, left, right);
+        self.test_finalize(cond, Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER);
+        self.assembler.beq(Self::DATA_TEMP_REGISTER, zero, 8);
+        self.assembler.addi(dest, src, 0);
+    }
+
+    pub fn move_conditionally_test64_then_else(
+        &mut self,
+        cond: ResultCondition,
+        left: u8,
+        right: impl Into<Operand>,
+        then_case: u8,
+        else_case: u8,
+        dest: u8,
+    ) {
+        let right = match right.into() {
+            Operand::Register(right) => right,
+
+            Operand::Imm32(imm) => {
+                self.load_immediate32(imm, Self::DATA_TEMP_REGISTER);
+                Self::DATA_TEMP_REGISTER
+            }
+
+            _ => unreachable!(),
+        };
+
+        self.assembler.and(Self::DATA_TEMP_REGISTER, left, right);
+        self.test_finalize(cond, Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER);
+        self.assembler.beq(Self::DATA_TEMP_REGISTER, zero, 12);
+        self.assembler.addi(dest, then_case, 0);
+        self.assembler.jal(zero, 8);
+        self.assembler.addi(dest, else_case, 0);
+    }
+
+    pub fn move_double_conditionally32(
+        &mut self,
+        cond: RelationalCondition,
+        lhs: u8,
+        rhs: impl Into<Operand>,
+        then_case: u8,
+        else_case: u8,
+        dest: u8,
+    ) {
+        self.assembler
+            .sign_extend(Self::DATA_TEMP_REGISTER, lhs, 32);
+
+        match rhs.into() {
+            Operand::Register(rhs) => {
+                self.assembler
+                    .sign_extend(Self::MEMORY_TEMP_REGISTER, rhs, 32);
+            }
+
+            Operand::Imm32(imm) => {
+                self.load_immediate32(imm, Self::MEMORY_TEMP_REGISTER);
+            }
+
+            _ => unreachable!(),
+        }
+
+        self.branch_for_move_conditionally(
+            Self::invert(cond),
+            Self::DATA_TEMP_REGISTER,
+            Self::MEMORY_TEMP_REGISTER,
+            12,
+        );
+        self.assembler.fsgnj::<64>(dest, then_case, then_case);
+        self.assembler.jal(zero, 8);
+        self.assembler.fsgnj::<64>(dest, else_case, else_case);
+    }
+
+    pub fn move_double_conditionally64(
+        &mut self,
+        cond: RelationalCondition,
+        lhs: u8,
+        rhs: impl Into<Operand>,
+        then_case: u8,
+        else_case: u8,
+        dest: u8,
+    ) {
+        let rhs = match rhs.into() {
+            Operand::Register(rhs) => rhs,
+
+            Operand::Imm32(imm) => {
+                self.load_immediate32(imm, Self::MEMORY_TEMP_REGISTER);
+                Self::MEMORY_TEMP_REGISTER
+            }
+
+            _ => unreachable!(),
+        };
+
+        self.branch_for_move_conditionally(Self::invert(cond), lhs, rhs, 12);
+        self.assembler.fsgnj::<64>(dest, then_case, then_case);
+        self.assembler.jal(zero, 8);
+        self.assembler.fsgnj::<64>(dest, else_case, else_case);
+    }
+
+    pub fn move_double_conditionally_float(
+        &mut self,
+        cond: DoubleCondition,
+        lhs: u8,
+        rhs: u8,
+        then_case: u8,
+        else_case: u8,
+        dest: u8,
+    ) {
+        let invcond_branch = self.branch_fp::<32, true>(cond, lhs, rhs);
+        self.assembler.fsgnj::<64>(dest, then_case, then_case);
+        let end = self.jump();
+        invcond_branch.link(self);
+        self.assembler.fsgnj::<64>(dest, else_case, else_case);
+        end.link(self);
+    }
+
+    pub fn move_double_conditionally_double(
+        &mut self,
+        cond: DoubleCondition,
+        lhs: u8,
+        rhs: u8,
+        then_case: u8,
+        else_case: u8,
+        dest: u8,
+    ) {
+        let invcond_branch = self.branch_fp::<64, true>(cond, lhs, rhs);
+        self.assembler.fsgnj::<64>(dest, then_case, then_case);
+        let end = self.jump();
+        invcond_branch.link(self);
+        self.assembler.fsgnj::<64>(dest, else_case, else_case);
+        end.link(self);
+    }
+
+    pub fn move_double_conditionally_test32(
+        &mut self,
+        cond: ResultCondition,
+        lhs: u8,
+        rhs: impl Into<Operand>,
+        then_case: u8,
+        else_case: u8,
+        dest: u8,
+    ) {
+        let rhs = match rhs.into() {
+            Operand::Register(rhs) => {
+                self.assembler
+                    .sign_extend(Self::MEMORY_TEMP_REGISTER, rhs, 32);
+                Self::MEMORY_TEMP_REGISTER
+            }
+
+            Operand::Imm32(imm) => {
+                self.load_immediate32(imm, Self::MEMORY_TEMP_REGISTER);
+                Self::MEMORY_TEMP_REGISTER
+            }
+
+            _ => unreachable!(),
+        };
+
+        self.assembler
+            .sign_extend(Self::DATA_TEMP_REGISTER, lhs, 32);
+
+        self.assembler.and(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, rhs);
+        self.test_finalize(cond, Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER);
+        
+        self.assembler.beq(Self::DATA_TEMP_REGISTER, zero, 12);
+        self.assembler.fsgnj::<64>(dest, then_case, then_case);
+        self.assembler.jal(zero, 8);
+        self.assembler.fsgnj::<64>(dest, else_case, else_case);
+    }
+
+    pub fn move_double_conditionally_test64(
+        &mut self,
+        cond: ResultCondition,
+        lhs: u8,
+        rhs: impl Into<Operand>,
+        then_case: u8,
+        else_case: u8,
+        dest: u8,
+    ) {
+        let rhs = match rhs.into() {
+            Operand::Register(rhs) => rhs,
+
+            Operand::Imm32(imm) => {
+                self.load_immediate32(imm, Self::MEMORY_TEMP_REGISTER);
+                Self::MEMORY_TEMP_REGISTER
+            }
+
+            _ => unreachable!(),
+        };
+
+        self.assembler.and(Self::DATA_TEMP_REGISTER, lhs, rhs);
+        self.test_finalize(cond, Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER);
+        
+        self.assembler.beq(Self::DATA_TEMP_REGISTER, zero, 12);
+        self.assembler.fsgnj::<64>(dest, then_case, then_case);
+        self.assembler.jal(zero, 8);
+        self.assembler.fsgnj::<64>(dest, else_case, else_case);
     }
 }
 

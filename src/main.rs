@@ -17,9 +17,9 @@ fn main() {
 
    
     
-    asm.convert_int32_to_double(ARGUMENT_GPR0, FPREG_T0);
-    asm.convert_int32_to_double(ARGUMENT_GPR1, FPREG_T1);
-    asm.div_double(FPREG_T0, FPREG_T1, FPREG_T0);
+    asm.mov(1i32, T3);
+    asm.mov(0i32, T4);
+    asm.move_conditionally_double_then_else(DoubleCondition::EqualAndOrdered, ARGUMENT_FPR0, ARGUMENT_FPR1, T3, T4, RETURN_VALUE_GPR);
     asm.ret();
     
     
@@ -31,7 +31,7 @@ fn main() {
 
     println!("{}", out);
 
-    let func: extern "C" fn(i32, i32) -> f64 = unsafe { std::mem::transmute(code.start()) };
+    let func: extern "C" fn(f64, f64) -> i32 = unsafe { std::mem::transmute(code.start()) };
 
-    println!("{}", func(2, 4));
+    println!("{}", func(2.0, 4.0));
 }
