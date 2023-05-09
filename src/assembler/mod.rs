@@ -38,7 +38,6 @@ cfg_if! {
     }
 }
 
-#[cfg(target_arch="x86_64")]
 impl TargetMacroAssembler {
     pub fn ret32(&mut self, _: u8) {
         self.ret();
@@ -61,7 +60,7 @@ impl TargetMacroAssembler {
     }
 
     pub fn oops(&mut self) {
-        self.assembler.int3();
+        self.breakpoint();
     }
 
     pub fn move_double_rrr(&mut self, src: Address, dest: Address, scratch: u8) {
@@ -110,3 +109,4 @@ impl TargetMacroAssembler {
         self.add64(size_of::<f64>() as i32, Self::STACK_POINTER_REGISTER);
     }
 }
+
