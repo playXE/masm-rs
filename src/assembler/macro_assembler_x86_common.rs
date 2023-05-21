@@ -163,8 +163,28 @@ impl MacroAssemblerX86Common {
                 self.assembler.addl_rm(src, dst.offset, dst.base);
             }
 
+            (Operand::Register(src), Operand::BaseIndex(address)) => {
+                self.assembler.addl_rm_scaled(
+                    src,
+                    address.offset,
+                    address.base,
+                    address.index,
+                    address.scale as _,
+                );
+            }
+
             (Operand::Address(src), Operand::Register(dst)) => {
                 self.assembler.addl_mr(src.offset, src.base, dst);
+            }
+
+            (Operand::BaseIndex(src), Operand::Register(dst)) => {
+                self.assembler.addl_mr_scaled(
+                    src.offset,
+                    src.base,
+                    src.index,
+                    src.scale as _,
+                    dst,
+                );
             }
 
             (Operand::Imm32(imm), Operand::AbsoluteAddress(address)) => {
