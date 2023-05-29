@@ -2280,7 +2280,7 @@ impl MacroAssemblerX86Common {
         self.and_double(dst, src, dst);
     }
 
-    pub fn or_double_rrr(&mut self, src: u8, dst: u8) {
+    pub fn or_double_rr(&mut self, src: u8, dst: u8) {
         self.assembler.orps_rr(src, dst);
     }
 
