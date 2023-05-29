@@ -1,7 +1,6 @@
 //! Calling convention information provider
 use cfg_if::cfg_if;
 
-
 cfg_if! {
     if #[cfg(target_arch="x86_64")]
     {
@@ -183,18 +182,30 @@ cfg_if! {
         pub const ARGUMENT_GPR5: u8 = x15;
         pub const ARGUMENT_GPR6: u8 = x16;
         pub const ARGUMENT_GPR7: u8 = x17;
-        
+
         pub const NON_ARG_GPR0: u8 = x5;
         pub const NON_ARG_GPR1: u8 = x6;
 
         pub const RETURN_VALUE_GPR: u8 = x10;
-        pub const RETURN_VALUE_GPR2: u8 = x11; 
+        pub const RETURN_VALUE_GPR2: u8 = x11;
 
         pub const NON_PRESERVED_NON_RETURN_GPR: u8 = x12;
         pub const NON_PRESERVED_NON_ARGUMENT_GPR0: u8 = x5;
         pub const NON_PRESERVED_NON_ARGUMENT_GPR1: u8 = x6;
 
         pub const PATCHPOINT_SCRATCH_REGISTER: u8 = x30;
+
+        pub fn to_argument_register(index: usize) -> u8 {
+
+            const REGISTER_FOR_INDEX: [u8; NUMBER_OF_ARGUMENT_REGISTERS] = [
+                ARGUMENT_GPR0, ARGUMENT_GPR1, ARGUMENT_GPR2, ARGUMENT_GPR3, ARGUMENT_GPR4, ARGUMENT_GPR5,
+                ARGUMENT_GPR6, ARGUMENT_GPR7
+            ];
+
+            REGISTER_FOR_INDEX[index]
+        }
+
+        pub const NUMBER_OF_ARGUMENT_REGISTERS: usize = 8;
     } else {
         compile_error!("Unsupported architecture")
     }

@@ -1411,7 +1411,7 @@ impl MacroAssemblerX86Common {
             (Operand::Register(test_value), Operand::Imm32(bit)) => {
                 self.assembler.btw_ir(bit, test_value);
 
-                if cond == ResultCondition::NotZero {
+                if cond == ResultCondition::NonZero {
                     return Jump::new(self.assembler.jb());
                 } else if cond == ResultCondition::Zero {
                     return Jump::new(self.assembler.jae());
@@ -1422,7 +1422,7 @@ impl MacroAssemblerX86Common {
 
             (Operand::Register(test_value), Operand::Register(bit)) => {
                 self.assembler.btw_rr(bit, test_value);
-                if cond == ResultCondition::NotZero {
+                if cond == ResultCondition::NonZero {
                     return Jump::new(self.assembler.jb());
                 } else if cond == ResultCondition::Zero {
                     return Jump::new(self.assembler.jae());
@@ -1434,7 +1434,7 @@ impl MacroAssemblerX86Common {
             (Operand::Address(test_value), Operand::Imm32(bit)) => {
                 self.assembler
                     .btw_im(bit, test_value.offset, test_value.base);
-                if cond == ResultCondition::NotZero {
+                if cond == ResultCondition::NonZero {
                     return Jump::new(self.assembler.jb());
                 } else if cond == ResultCondition::Zero {
                     return Jump::new(self.assembler.jae());

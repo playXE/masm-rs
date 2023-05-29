@@ -88,5 +88,21 @@ cfg_if! {
 
         pub const RETURN_VALUE_FPR: u8 = f10;
         pub const NON_PRESERVED_NON_ARGUMENT_FPR0: u8 = f11;
+
+        pub const NUMBER_OF_ARGUMENT_REGISTERS: usize = 8;
+
+        pub const fn to_argument_register(i: usize) -> u8 {
+            match i {
+                0 => ARGUMENT_FPR0,
+                1 => ARGUMENT_FPR1,
+                2 => ARGUMENT_FPR2,
+                3 => ARGUMENT_FPR3,
+                4 => ARGUMENT_FPR4,
+                5 => ARGUMENT_FPR5,
+                6 => ARGUMENT_FPR6,
+                7 => ARGUMENT_FPR7,
+                _ => panic!("Invalid argument register index"),
+            }
+        }
     }
 }

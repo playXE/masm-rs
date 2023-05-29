@@ -95,6 +95,12 @@ impl MacroAssemblerRISCV64 {
     pub const FRAME_POINTER_REGISTER: u8 = fp;
     pub const LINK_REGISTER: u8 = ra;
 
+    pub const SCRATCH_REGISTER: u8 = Self::DATA_TEMP_REGISTER;
+
+    pub fn nop(&mut self) {
+        self.assembler.addi(zero, zero, 0);
+    }
+
     pub fn invert(cond: RelationalCondition) -> RelationalCondition {
         let cond: Condition = unsafe { std::mem::transmute(cond as u8) };
 
@@ -117,6 +123,26 @@ impl MacroAssemblerRISCV64 {
             DoubleCondition::LessThanOrEqualOrUnordered => DoubleCondition::GreaterThanAndOrdered,
             DoubleCondition::GreaterThanOrUnordered => DoubleCondition::LessThanOrEqualAndOrdered,
             DoubleCondition::GreaterThanOrEqualOrUnordered => DoubleCondition::LessThanAndOrdered,
+        }
+    }
+
+    pub fn invert_result(cond: ResultCondition) -> ResultCondition {
+        match cond {
+            ResultCondition::Zero => ResultCondition::NonZero,
+            ResultCondition::NonZero => ResultCondition::Zero,
+            ResultCondition::Signed => ResultCondition::PositiveOrZero,
+            ResultCondition::PositiveOrZero => ResultCondition::Signed,
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn is_invertible(cond: ResultCondition) -> bool {
+        match cond {
+            ResultCondition::Zero
+            | ResultCondition::NonZero
+            | ResultCondition::Signed
+            | ResultCondition::PositiveOrZero => true,
+            _ => false,
         }
     }
 
@@ -1871,7 +1897,16 @@ impl MacroAssemblerRISCV64 {
         self.assembler.fmv_fp2i::<32>(dest, src);
     }
 
+    pub fn move_float_to32(&mut self, src: u8, dest: u8) {
+        self.assembler.fmv_fp2i::<32>(dest, src);
+        self.assembler.mask_register(dest, dest, 32);
+    }
+
     pub fn move64_to_float(&mut self, src: u8, dest: u8) {
+        self.assembler.fmv_i2fp::<32>(dest, src);
+    }
+
+    pub fn move32_to_float(&mut self, src: u8, dest: u8) {
         self.assembler.fmv_i2fp::<32>(dest, src);
     }
 
@@ -2129,7 +2164,7 @@ impl MacroAssemblerRISCV64 {
         self.test_finalize(cond, Self::DATA_TEMP_REGISTER, dest);
     }
 
-    pub fn test32(
+    pub fn test32_cond(
         &mut self,
         cond: ResultCondition,
         lhs: impl Into<Operand>,
@@ -4015,6 +4050,8 @@ impl MacroAssemblerRISCV64 {
     pub fn breakpoint(&mut self) {
         self.assembler.ebreak();
     }
+
+    pub fn set_carry(&mut self, _: u8) {}
 
     pub fn call_op(&mut self, op: Option<impl Into<Operand>>) -> Call {
         if let Some(op) = op {

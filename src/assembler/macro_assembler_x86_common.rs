@@ -47,7 +47,7 @@ pub enum ResultCondition {
     Signed = Condition::S as u8,
     PositiveOrZero = Condition::NS as u8,
     Zero = Condition::E as u8,
-    NotZero = Condition::NE as u8,
+    NonZero = Condition::NE as u8,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -2280,11 +2280,11 @@ impl MacroAssemblerX86Common {
         self.and_double(dst, src, dst);
     }
 
-    pub fn or_double(&mut self, src: u8, dst: u8) {
+    pub fn or_double_rrr(&mut self, src: u8, dst: u8) {
         self.assembler.orps_rr(src, dst);
     }
 
-    pub fn or_double_rrr(&mut self, src1: u8, src2: u8, dst: u8) {
+    pub fn or_double(&mut self, src1: u8, src2: u8, dst: u8) {
         if src1 == dst {
             self.assembler.orps_rr(src2, dst);
         } else {
@@ -2293,11 +2293,11 @@ impl MacroAssemblerX86Common {
         }
     }
 
-    pub fn or_float(&mut self, src: u8, dst: u8) {
+    pub fn or_float_rr(&mut self, src: u8, dst: u8) {
         self.assembler.orps_rr(src, dst);
     }
 
-    pub fn or_float_rrr(&mut self, src1: u8, src2: u8, dst: u8) {
+    pub fn or_float(&mut self, src1: u8, src2: u8, dst: u8) {
         if src1 == dst {
             self.assembler.orps_rr(src2, dst);
         } else {
@@ -2456,9 +2456,9 @@ impl MacroAssemblerX86Common {
         self.assembler.cvttsd2si_rr(src, dest);
 
         if neg_zero_check {
-            let value_is_non_zero = self.branch_test32(ResultCondition::NotZero, dest, dest);
+            let value_is_non_zero = self.branch_test32(ResultCondition::NonZero, dest, dest);
             self.assembler.movmskpd_rr(src, Self::SCRATCH_REGISTER);
-            failure_cases.push(self.branch_test32(ResultCondition::NotZero, Self::SCRATCH_REGISTER, 1i32));
+            failure_cases.push(self.branch_test32(ResultCondition::NonZero, Self::SCRATCH_REGISTER, 1i32));
             value_is_non_zero.link(self);
         }
 
@@ -2957,7 +2957,7 @@ impl MacroAssemblerX86Common {
         match (test_value.into(), bit.into()) {
             (Operand::Register(reg), Operand::Imm32(bit)) => {
                 self.assembler.bt_ir(bit % 32, reg);
-                if cond == ResultCondition::NotZero {
+                if cond == ResultCondition::NonZero {
                     return Jump::new(self.assembler.jb());
                 } else if cond == ResultCondition::Zero {
                     return Jump::new(self.assembler.jae());
@@ -2969,7 +2969,7 @@ impl MacroAssemblerX86Common {
             (Operand::Address(test_value), Operand::Imm32(bit)) => {
                 self.assembler
                     .bt_im(bit % 32, test_value.offset, test_value.base);
-                if cond == ResultCondition::NotZero {
+                if cond == ResultCondition::NonZero {
                     return Jump::new(self.assembler.jb());
                 } else if cond == ResultCondition::Zero {
                     return Jump::new(self.assembler.jae());
@@ -2981,7 +2981,7 @@ impl MacroAssemblerX86Common {
             (Operand::Register(reg), Operand::Register(bit)) => {
                 self.assembler.bt_rr(bit, reg);
 
-                if cond == ResultCondition::NotZero {
+                if cond == ResultCondition::NonZero {
                     return Jump::new(self.assembler.jb());
                 } else if cond == ResultCondition::Zero {
                     return Jump::new(self.assembler.jae());
@@ -3421,7 +3421,7 @@ impl MacroAssemblerX86Common {
     ) -> Option<ResultCondition> {
         match cond {
             RelationalCondition::Equal => Some(ResultCondition::Zero),
-            RelationalCondition::NotEqual => Some(ResultCondition::NotZero),
+            RelationalCondition::NotEqual => Some(ResultCondition::NonZero),
             RelationalCondition::LessThan => Some(ResultCondition::Signed),
             RelationalCondition::GreaterThanOrEqual => Some(ResultCondition::PositiveOrZero),
             _ => None,
@@ -3470,7 +3470,7 @@ impl MacroAssemblerX86Common {
     pub fn is_invertible(cond: ResultCondition) -> bool {
         match cond {
             ResultCondition::Zero
-            | ResultCondition::NotZero
+            | ResultCondition::NonZero
             | ResultCondition::Signed
             | ResultCondition::PositiveOrZero => true,
             _ => false,
@@ -3479,8 +3479,8 @@ impl MacroAssemblerX86Common {
 
     pub fn invert_result(cond: ResultCondition) -> ResultCondition {
         match cond {
-            ResultCondition::Zero => ResultCondition::NotZero,
-            ResultCondition::NotZero => ResultCondition::Zero,
+            ResultCondition::Zero => ResultCondition::NonZero,
+            ResultCondition::NonZero => ResultCondition::Zero,
             ResultCondition::Signed => ResultCondition::PositiveOrZero,
             ResultCondition::PositiveOrZero => ResultCondition::Signed,
             _ => unreachable!(),
@@ -4038,7 +4038,7 @@ impl MacroAssemblerX86Common {
     #[allow(dead_code)]
     fn clz32_after_bsr(&mut self, dst: u8) {
         let src_is_non_zero =
-            Jump::new(self.assembler.jcc(ResultCondition::NotZero.x86_condition()));
+            Jump::new(self.assembler.jcc(ResultCondition::NonZero.x86_condition()));
         self.mov(32i32, dst);
         let skip_non_zero_case = self.jump();
         src_is_non_zero.link(self);

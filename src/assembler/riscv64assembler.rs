@@ -1058,7 +1058,7 @@ riscv_insns! {
 }
 
 impl RISCV64Assembler {
-    pub fn first_register() -> u8 {
+    pub const fn first_register() -> u8 {
         x0
     }
 
@@ -1066,7 +1066,7 @@ impl RISCV64Assembler {
         x31
     }
 
-    pub fn first_sp_register() -> u8 {
+    pub const fn first_sp_register() -> u8 {
         pc
     }
 
@@ -1074,7 +1074,7 @@ impl RISCV64Assembler {
         pc
     }
 
-    pub fn first_fp_register() -> u8 {
+    pub const fn first_fp_register() -> u8 {
         f0
     }
 
@@ -1156,6 +1156,14 @@ impl RISCV64Assembler {
             f31 => "f31",
             _ => "unknown",
         }
+    }
+
+    pub const fn number_of_registers() -> usize {
+        Self::last_register() as usize - Self::first_register() as usize + 1
+    }
+
+    pub const fn number_of_fp_registers() -> usize {
+        Self::last_fp_register() as usize - Self::first_fp_register() as usize + 1
     }
 
     pub unsafe fn get_relocate_address(code: *mut u8, label: AssemblerLabel) -> *mut u8 {
