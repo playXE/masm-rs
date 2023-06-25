@@ -1412,9 +1412,9 @@ impl MacroAssemblerX86Common {
                 self.assembler.btw_ir(bit, test_value);
 
                 if cond == ResultCondition::NonZero {
-                    return Jump::new(self.assembler.jb());
+                    Jump::new(self.assembler.jb())
                 } else if cond == ResultCondition::Zero {
-                    return Jump::new(self.assembler.jae());
+                    Jump::new(self.assembler.jae())
                 } else {
                     unreachable!("branch_test_bit64: {:?}, {:?}, {:?}", cond, test_value, bit)
                 }
@@ -1423,9 +1423,9 @@ impl MacroAssemblerX86Common {
             (Operand::Register(test_value), Operand::Register(bit)) => {
                 self.assembler.btw_rr(bit, test_value);
                 if cond == ResultCondition::NonZero {
-                    return Jump::new(self.assembler.jb());
+                    Jump::new(self.assembler.jb())
                 } else if cond == ResultCondition::Zero {
-                    return Jump::new(self.assembler.jae());
+                    Jump::new(self.assembler.jae())
                 } else {
                     unreachable!("branch_test_bit64: {:?}, {:?}, {:?}", cond, test_value, bit)
                 }
@@ -1435,9 +1435,9 @@ impl MacroAssemblerX86Common {
                 self.assembler
                     .btw_im(bit, test_value.offset, test_value.base);
                 if cond == ResultCondition::NonZero {
-                    return Jump::new(self.assembler.jb());
+                    Jump::new(self.assembler.jb())
                 } else if cond == ResultCondition::Zero {
-                    return Jump::new(self.assembler.jae());
+                    Jump::new(self.assembler.jae())
                 } else {
                     unreachable!("branch_test_bit64: {:?}, {:?}, {:?}", cond, test_value, bit)
                 }

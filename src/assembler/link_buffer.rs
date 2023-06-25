@@ -171,8 +171,10 @@ impl LinkBuffer {
     pub fn is_valid(&self) -> bool {
         !self.did_fail_to_allocate()
     }
-
+    #[allow(clippy::not_unsafe_ptr_arg_deref)]
     pub fn link_call(&mut self, call: Call, function: *const u8) {
+        // # Safety
+        // `self.code()` is initialized by `allocate()`
         unsafe {
             protect_jit_memory(ProtectJitAccess::ReadWrite);
             TargetMacroAssembler::link_call(self.code(), call, function);
@@ -182,6 +184,8 @@ impl LinkBuffer {
     }
 
     pub fn link_jump(&mut self, jump: Jump, target: *const u8) {
+        // # Safety
+        // `self.code()` is initialized by `allocate()`
         unsafe {
             protect_jit_memory(ProtectJitAccess::ReadWrite);
             TargetAssembler::link_jump_(self.code(), jump.label, target as *mut u8);
@@ -277,7 +281,11 @@ impl LinkBuffer {
             return Ok(result);
         }
 
-        try_to_disassemble(result.start(), result.end() as usize - result.start() as usize, "    ", out)?;
+        // # Safety
+        //  we just allocated the code and it is for sure a valid pointer
+        unsafe { 
+            try_to_disassemble(result.start(), result.end() as usize - result.start() as usize, "    ", out)?;
+        }
 
         Ok(result)
     }

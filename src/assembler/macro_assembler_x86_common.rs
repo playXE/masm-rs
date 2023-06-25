@@ -3,8 +3,8 @@ use std::ops::{Deref, DerefMut};
 use crate::assembler::abstract_macro_assembler::AbsoluteAddress;
 
 use super::abstract_macro_assembler::{
-    AbstractMacroAssembler, Address, BaseIndex, Call, DataLabelCompact, Extend, Jump, Operand,
-    Scale, JumpList,
+    AbstractMacroAssembler, Address, BaseIndex, Call, DataLabelCompact, Extend, Jump, JumpList,
+    Operand, Scale,
 };
 use super::buffer::AssemblerLabel;
 use super::x86assembler::*;
@@ -178,13 +178,8 @@ impl MacroAssemblerX86Common {
             }
 
             (Operand::BaseIndex(src), Operand::Register(dst)) => {
-                self.assembler.addl_mr_scaled(
-                    src.offset,
-                    src.base,
-                    src.index,
-                    src.scale as _,
-                    dst,
-                );
+                self.assembler
+                    .addl_mr_scaled(src.offset, src.base, src.index, src.scale as _, dst);
             }
 
             (Operand::Imm32(imm), Operand::AbsoluteAddress(address)) => {
@@ -614,7 +609,6 @@ impl MacroAssemblerX86Common {
 
             (Operand::Address(op1), Operand::Register(op2))
             | (Operand::Register(op2), Operand::Address(op1)) => {
-              
                 if op2 == dest {
                     self.mul32(op1, dest);
                 } else if op1.base == dest {
@@ -1774,7 +1768,6 @@ impl MacroAssemblerX86Common {
             ),
 
             (Operand::Register(src), Operand::BaseIndex(address)) => {
-                
                 self.assembler.movb_rm_scaled(
                     src,
                     address.offset,
@@ -2389,8 +2382,6 @@ impl MacroAssemblerX86Common {
         self.branch_double(DoubleCondition::EqualOrUnordered, reg, scratch)
     }
 
-
-
     pub fn compare_double(&mut self, cond: DoubleCondition, left: u8, right: u8, dest: u8) {
         self.floating_point_compare(cond, left, right, dest, |this, arg1, arg2| {
             this.assembler.ucomisd_rr(arg1, arg2);
@@ -2436,7 +2427,12 @@ impl MacroAssemblerX86Common {
     /// If the result is not representable as a 32 bit value, branch.
     /// May also branch for some values that are representable in 32 bits
     /// (specifically, in this case, `i32::MIN`).
-    pub fn branch_truncate_double_to_int32(&mut self, src: u8, dest: u8, branch_if_truncate_successful: bool) -> Jump {
+    pub fn branch_truncate_double_to_int32(
+        &mut self,
+        src: u8,
+        dest: u8,
+        branch_if_truncate_successful: bool,
+    ) -> Jump {
         self.assembler.cvttsd2si_rr(src, dest);
         self.branch32(
             if branch_if_truncate_successful {
@@ -2452,13 +2448,24 @@ impl MacroAssemblerX86Common {
     /// If the result is not representable as a 32 bit value, branch.
     /// May also branch for some values that are representable in 32 bits
     /// (specifically, in this case, 0).
-    pub fn branch_convert_double_to_int32(&mut self, src: u8, dest: u8, failure_cases: &mut JumpList, fp_temp: u8, neg_zero_check: bool)  {
+    pub fn branch_convert_double_to_int32(
+        &mut self,
+        src: u8,
+        dest: u8,
+        failure_cases: &mut JumpList,
+        fp_temp: u8,
+        neg_zero_check: bool,
+    ) {
         self.assembler.cvttsd2si_rr(src, dest);
 
         if neg_zero_check {
             let value_is_non_zero = self.branch_test32(ResultCondition::NonZero, dest, dest);
             self.assembler.movmskpd_rr(src, Self::SCRATCH_REGISTER);
-            failure_cases.push(self.branch_test32(ResultCondition::NonZero, Self::SCRATCH_REGISTER, 1i32));
+            failure_cases.push(self.branch_test32(
+                ResultCondition::NonZero,
+                Self::SCRATCH_REGISTER,
+                1i32,
+            ));
             value_is_non_zero.link(self);
         }
 
@@ -2982,9 +2989,9 @@ impl MacroAssemblerX86Common {
                 self.assembler.bt_rr(bit, reg);
 
                 if cond == ResultCondition::NonZero {
-                    return Jump::new(self.assembler.jb());
+                    Jump::new(self.assembler.jb())
                 } else if cond == ResultCondition::Zero {
-                    return Jump::new(self.assembler.jae());
+                    Jump::new(self.assembler.jae())
                 } else {
                     unreachable!("Invalid condition for branch_test_bit32: {:?}", cond);
                 }
@@ -3351,9 +3358,9 @@ impl MacroAssemblerX86Common {
             return result;
         }
 
-        return Jump::new(self.assembler.jcc(unsafe {
+        Jump::new(self.assembler.jcc(unsafe {
             std::mem::transmute::<u8, Condition>(cond as u8 & !DOUBLE_CONDITION_BITS)
-        }));
+        }))
     }
 
     pub fn set32(&mut self, cond: super::x86assembler::Condition, dest: u8) {
@@ -3468,13 +3475,12 @@ impl MacroAssemblerX86Common {
     }
 
     pub fn is_invertible(cond: ResultCondition) -> bool {
-        match cond {
+        matches!(cond,
             ResultCondition::Zero
             | ResultCondition::NonZero
             | ResultCondition::Signed
-            | ResultCondition::PositiveOrZero => true,
-            _ => false,
-        }
+            | ResultCondition::PositiveOrZero
+        )
     }
 
     pub fn invert_result(cond: ResultCondition) -> ResultCondition {

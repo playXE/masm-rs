@@ -41,8 +41,7 @@ impl BfJIT {
     pub fn translate(&self, disasm: bool, input: &str) -> CodeRef {
         let mut tokens: Vec<Token> = vec![];
         let mut chars = input.chars().peekable();
-        loop {
-            let c = if let Some(c) = chars.next() { c } else { break };
+        while let Some(c) = chars.next() {
             match c {
                 '>' => {
                     let mut n: u32 = 1;

@@ -134,7 +134,7 @@ cfg_if! {
                     0, 5, 1, 6, usize::MAX, usize::MAX, 7, 8, 2, 3 ,4, usize::MAX, 9, usize::MAX, usize::MAX, usize::MAX
                 ];
 
-                INDEX_FOR_REGISTER[reg as usize] as usize
+                INDEX_FOR_REGISTER[reg as usize]
             }
 
             pub const fn reserved_registers() -> &'static [u8] {

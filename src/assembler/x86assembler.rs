@@ -5015,8 +5015,8 @@ impl X86Assembler {
         a - b
     }
 
-    pub fn get_relocate_address(code: *mut u8, label: AssemblerLabel) -> *mut u8 {
-        unsafe { code.add(label.offset() as _) }
+    pub unsafe fn get_relocate_address(code: *mut u8, label: AssemblerLabel) -> *mut u8 {
+        code.add(label.offset() as _)
     }
 
     pub fn get_call_return_offset(call: AssemblerLabel) -> usize {

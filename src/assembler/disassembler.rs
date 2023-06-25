@@ -1,4 +1,5 @@
-pub fn try_to_disassemble<W: std::fmt::Write>(
+#[allow(unused_unsafe)]
+pub unsafe fn try_to_disassemble<W: std::fmt::Write>(
     code: *const u8,
     size: usize,
     prefix: &str,

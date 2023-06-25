@@ -32,8 +32,15 @@ pub fn allocate_executable_memory(
         .alloc(size)
 }
 
-pub fn free_executable_memory(rx: *const u8) -> Result<(), jit_allocator::Error> {
-    unsafe {
+/// Free executable memory allocated by `allocate_executable_memory`.
+/// 
+/// # Safety 
+/// 
+/// - `rx` must be pointer to read-execute memory allocated by `allocate_executable_memory`.
+/// - `rx` must not be null.
+/// - `rx` must not be double freed.
+pub unsafe fn free_executable_memory(rx: *const u8) -> Result<(), jit_allocator::Error> {
+    {
         EXECUTABLE_ALLOCATOR
             .get()
             .expect("Executable Allocator must be initialized before freeing")
