@@ -33,9 +33,11 @@ pub fn allocate_executable_memory(
 }
 
 pub fn free_executable_memory(rx: *const u8) -> Result<(), jit_allocator::Error> {
-    EXECUTABLE_ALLOCATOR
-        .get()
-        .expect("Executable Allocator must be initialized before freeing")
-        .lock()
-        .release(rx)
+    unsafe {
+        EXECUTABLE_ALLOCATOR
+            .get()
+            .expect("Executable Allocator must be initialized before freeing")
+            .lock()
+            .release(rx)
+    }
 }
