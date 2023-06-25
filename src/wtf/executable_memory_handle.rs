@@ -1,28 +1,34 @@
 use std::sync::Arc;
 
-use vm_allocator::RangeInclusive;
-
-use crate::{assembler::assembly_comments::AssemblyCommentsRegistry, jit::free_executable_memory};
+use crate::jit::free_executable_memory;
 
 pub struct ExecutableMemoryHandle {
-    vmem: RangeInclusive,
+    rx: *const u8,
+    rw: *mut u8,
     size: usize,
 }
 
 impl ExecutableMemoryHandle {
-    pub(crate) fn new(vmem: RangeInclusive, size: usize) -> Arc<Self> {
-        Arc::new(ExecutableMemoryHandle { vmem, size })
+    pub(crate) fn new(rx: *const u8, rw: *mut u8, size: usize) -> Arc<Self> {
+        Arc::new(ExecutableMemoryHandle { rx, rw, size })
     }
 
     pub fn contains(&self, address: *const u8) -> bool {
-        let start = self.vmem.start();
-        let end = self.vmem.end();
+        let start = self.start() as u64;
+        let end = self.end() as u64;
+        let address = address as u64;
+        address >= start && address < end
+    }
+
+    pub fn contains_rw(&self, address: *const u8) -> bool {
+        let start = self.start_rw() as u64;
+        let end = self.end_rw() as u64;
         let address = address as u64;
         address >= start && address < end
     }
 
     pub fn start(&self) -> *mut u8 {
-        self.vmem.start() as _
+        self.rx as _
     }
 
     pub fn size_in_bytes(&self) -> usize {
@@ -30,15 +36,21 @@ impl ExecutableMemoryHandle {
     }
 
     pub fn end(&self) -> *mut u8 {
-        self.vmem.end() as _
+        unsafe { self.start().add(self.size) }
+    }
+
+    pub fn start_rw(&self) -> *mut u8 {
+        self.rw
+    }
+
+    pub fn end_rw(&self) -> *mut u8 {
+        unsafe { self.rw.add(self.size) }
     }
 }
 
 impl Drop for ExecutableMemoryHandle {
     fn drop(&mut self) {
-        AssemblyCommentsRegistry::singleton()
-            .unregister_code_range(self.vmem.start() as _, self.vmem.end() as _);
-        free_executable_memory(self.vmem);
+        free_executable_memory(self.rx);
     }
 }
 

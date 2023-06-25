@@ -23,7 +23,7 @@ fn main() {
     asm.ret();
     
     
-    let mut lb = LinkBuffer::from_macro_assembler(&mut asm);
+    let mut lb = LinkBuffer::from_macro_assembler(&mut asm).unwrap();
 
     let mut out = String::new();
 

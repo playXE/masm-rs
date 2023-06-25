@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 use crate::assembler::{abstract_macro_assembler::Operand, TargetMacroAssembler};
 
 pub trait AssemblyHelpers {

@@ -2,6 +2,8 @@
 
 #![allow(non_upper_case_globals)]
 
+//use jit_allocator::{protect_jit_memory, ProtectJitAccess, //flush_instruction_cache};
+
 use super::buffer::{AssemblerBuffer, AssemblerLabel, LocalWriter};
 use std::ops::{Deref, DerefMut};
 pub struct X86Assembler {
@@ -4770,11 +4772,17 @@ impl X86Assembler {
     // writable region of memory; to modify the code in an execute-only execuable
     // pool the 'repatch' and 'relink' methods should be used.
     pub unsafe fn set_pointer(where_: *mut u8, value: *mut u8) {
+        //protect_jit_memory(ProtectJitAccess::ReadWrite);
         where_.cast::<*mut u8>().sub(1).write_unaligned(value);
+        //protect_jit_memory(ProtectJitAccess::ReadExecute);
+        //flush_instruction_cache(where_, size_of::<usize>() * 8);
     }
 
     pub unsafe fn set_int32(where_: *mut u8, value: i32) {
+        //protect_jit_memory(ProtectJitAccess::ReadWrite);
         where_.cast::<i32>().sub(1).write_unaligned(value);
+        //protect_jit_memory(ProtectJitAccess::ReadExecute);
+        //flush_instruction_cache(where_, size_of::<usize>() * 8);
     }
 
     pub unsafe fn set_rel32(from: *mut u8, to: *mut u8) {
@@ -4795,13 +4803,19 @@ impl X86Assembler {
         let dst_ptr = to;
         let distance = dst_ptr as isize - (ptr as isize + 5);
 
+        //protect_jit_memory(ProtectJitAccess::ReadWrite);
         ptr.write_unaligned(OP_JMP_rel32);
         ptr.add(1).cast::<i32>().write_unaligned(distance as i32);
+        //protect_jit_memory(ProtectJitAccess::ReadExecute);
+        //flush_instruction_cache(ptr, size_of::<usize>() * 8);
     }
 
     pub unsafe fn replace_with_hlt(instruction_start: *mut u8) {
+        //protect_jit_memory(ProtectJitAccess::ReadWrite);
         let ptr = instruction_start;
         ptr.write_unaligned(OP_HLT);
+        //protect_jit_memory(ProtectJitAccess::ReadExecute);
+        //flush_instruction_cache(ptr, size_of::<usize>() * 8);
     }
 
     pub unsafe fn read_pointer(instruction_start: *mut u8) -> *mut u8 {
@@ -4863,7 +4877,7 @@ impl X86Assembler {
         let modrm_bytes = 1;
 
         let ptr = instruction_start;
-
+        //protect_jit_memory(ProtectJitAccess::ReadWrite);
         ptr.write(OP_GROUP11_EvIz);
         ptr.add(1)
             .write((MOD_RM_MEM_NO_DISP << 6) | (GROUP1_OP_CMP << 3) | dst);
@@ -4873,6 +4887,8 @@ impl X86Assembler {
         for i in opcode_bytes + modrm_bytes..Self::max_jump_replacement_size() {
             ptr.add(i).write(as_bytes[i - opcode_bytes - modrm_bytes]);
         }
+        //protect_jit_memory(ProtectJitAccess::ReadExecute);
+        //flush_instruction_cache(instruction_start, size_of::<usize>() * 8);
     }
 
     pub unsafe fn revert_jump_to_cmpl_ir_force32(instruction_start: *mut u8, imm: i32, dst: u8) {
@@ -4880,7 +4896,7 @@ impl X86Assembler {
         let modrm_bytes = 1;
 
         let ptr = instruction_start;
-
+        //protect_jit_memory(ProtectJitAccess::ReadWrite);
         ptr.write(OP_GROUP11_EvIz);
         ptr.add(1)
             .write((MOD_RM_REG << 6) | (GROUP1_OP_CMP << 3) | dst);
@@ -4890,6 +4906,9 @@ impl X86Assembler {
         for i in opcode_bytes + modrm_bytes..Self::max_jump_replacement_size() {
             ptr.add(i).write(as_bytes[i - opcode_bytes - modrm_bytes]);
         }
+
+        //protect_jit_memory(ProtectJitAccess::ReadExecute);
+        //flush_instruction_cache(instruction_start, size_of::<usize>() * 8);
     }
 
     pub unsafe fn revert_jump_to_movq_i64r(instruction_start: *mut u8, imm: i64, dst: u8) {
@@ -4898,7 +4917,7 @@ impl X86Assembler {
         let opcode_bytes = 1;
 
         let ptr = instruction_start;
-
+        //protect_jit_memory(ProtectJitAccess::ReadWrite);
         ptr.write(PRE_REX | (1 << 3) | (dst >> 3));
         ptr.add(1).write(OP_MOV_EAXIv | (dst & 7));
 
@@ -4907,6 +4926,8 @@ impl X86Assembler {
         for i in rex_bytes + opcode_bytes..instruction_size {
             ptr.add(i).write(as_bytes[i - rex_bytes - opcode_bytes]);
         }
+        //protect_jit_memory(ProtectJitAccess::ReadExecute);
+        //flush_instruction_cache(instruction_start, size_of::<usize>() * 8);
     }
 
     pub unsafe fn revert_jump_to_movq_i32r(instruction_start: *mut u8, imm: i64, dst: u8) {
@@ -4916,6 +4937,7 @@ impl X86Assembler {
 
         let ptr = instruction_start;
 
+        //protect_jit_memory(ProtectJitAccess::ReadWrite);
         ptr.write(PRE_REX | (dst >> 3));
         ptr.add(1).write(OP_MOV_EAXIv | (dst & 7));
 
@@ -4924,10 +4946,14 @@ impl X86Assembler {
         for i in rex_bytes + opcode_bytes..instruction_size {
             ptr.add(i).write(as_bytes[i - rex_bytes - opcode_bytes]);
         }
+
+        //protect_jit_memory(ProtectJitAccess::ReadExecute);
+        //flush_instruction_cache(instruction_start, size_of::<usize>() * 8);
     }
 
     #[allow(unused_mut)]
     pub unsafe fn fill_nops(base: *mut u8, mut size: usize) {
+        //protect_jit_memory(ProtectJitAccess::ReadWrite);
         #[cfg(target_pointer_width = "64")]
         {
             const NOPS: [&'static [u8]; 10] = [
@@ -4978,6 +5004,9 @@ impl X86Assembler {
         {
             std::ptr::write_bytes(base, OP_NOP, size);
         }
+
+        //protect_jit_memory(ProtectJitAccess::ReadExecute);
+        //flush_instruction_cache(base, size_of::<usize>() * 8);
     }
 
     pub fn get_difference_between_labels(a: AssemblerLabel, b: AssemblerLabel) -> i32 {
@@ -4995,6 +5024,7 @@ impl X86Assembler {
     }
 
     pub unsafe fn replace_with_address_computation(mut instruction_start: *mut u8) {
+        //protect_jit_memory(ProtectJitAccess::ReadWrite);
         #[cfg(target_pointer_width = "64")]
         if (instruction_start.read() & !15) == PRE_REX {
             instruction_start = instruction_start.add(1);
@@ -5007,6 +5037,8 @@ impl X86Assembler {
             OP_LEA => {}
             _ => unreachable!(),
         }
+        //protect_jit_memory(ProtectJitAccess::ReadExecute);
+        //flush_instruction_cache(instruction_start, size_of::<usize>() * 8);
     }
 
     pub unsafe fn replace_with_load(mut instruction_start: *mut u8) {
@@ -5015,6 +5047,7 @@ impl X86Assembler {
             instruction_start = instruction_start.add(1);
         }
 
+        //protect_jit_memory(ProtectJitAccess::ReadWrite);
         match instruction_start.read() {
             OP_MOV_GvEv => {}
             OP_LEA => {
@@ -5022,6 +5055,9 @@ impl X86Assembler {
             }
             _ => unreachable!(),
         }
+
+        //protect_jit_memory(ProtectJitAccess::ReadExecute);
+        //flush_instruction_cache(instruction_start, size_of::<usize>() * 8);
     }
 
     pub fn max_jump_replacement_size() -> usize {

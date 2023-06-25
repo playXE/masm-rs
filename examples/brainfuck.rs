@@ -6,11 +6,11 @@ use macroassembler::assembler::abstract_macro_assembler::Address;
 use macroassembler::assembler::abstract_macro_assembler::Jump;
 use macroassembler::assembler::abstract_macro_assembler::Label;
 use macroassembler::assembler::link_buffer::LinkBuffer;
-use macroassembler::assembler::*;
 use macroassembler::assembler::RelationalCondition;
+use macroassembler::assembler::*;
 use macroassembler::jit::gpr_info::*;
-use macroassembler::wtf::executable_memory_handle::CodeRef;
 use macroassembler::jit::helpers::AssemblyHelpers;
+use macroassembler::wtf::executable_memory_handle::CodeRef;
 
 pub struct BfJIT {
     ctx: CGContext,
@@ -143,13 +143,19 @@ impl BfJIT {
                 }
                 Token::Add(n) => {
                     masm.comment(format!("add {}", n));
-                    masm.load8_signed_extend_to_32(Address::new(NON_PRESERVED_NON_RETURN_GPR, 0), T0);
+                    masm.load8_signed_extend_to_32(
+                        Address::new(NON_PRESERVED_NON_RETURN_GPR, 0),
+                        T0,
+                    );
                     masm.add32(n as i32, T0);
                     masm.store8(T0, Address::new(NON_PRESERVED_NON_RETURN_GPR, 0));
                 }
                 Token::Sub(n) => {
                     masm.comment(format!("sub {}", n));
-                    masm.load8_signed_extend_to_32(Address::new(NON_PRESERVED_NON_RETURN_GPR, 0), T0);
+                    masm.load8_signed_extend_to_32(
+                        Address::new(NON_PRESERVED_NON_RETURN_GPR, 0),
+                        T0,
+                    );
                     masm.add32(-(n as i32), T0);
                     masm.store8(T0, Address::new(NON_PRESERVED_NON_RETURN_GPR, 0));
                 }
@@ -221,7 +227,7 @@ impl BfJIT {
         masm.emit_function_epilogue();
         masm.ret();
         assert!(jmps_to_end.is_empty());
-        let mut buffer = LinkBuffer::from_macro_assembler(&mut masm);
+        let mut buffer = LinkBuffer::from_macro_assembler(&mut masm).unwrap();
 
         let mut fmt = String::new();
 
@@ -281,8 +287,6 @@ fn main() {
         "Compiled in {:.2}ms",
         compile_start.elapsed().as_micros() as f64 / 1000.0
     );
-
-
 
     let fun = unsafe { std::mem::transmute::<_, extern "C" fn(*mut u8)>(code.start()) };
     let mut mem = vec![0u8; 100 * 1024];

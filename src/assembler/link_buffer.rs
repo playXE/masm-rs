@@ -1,5 +1,7 @@
 use std::{collections::hash_map::Entry, ptr::null_mut};
 
+use jit_allocator::{protect_jit_memory, ProtectJitAccess, flush_instruction_cache};
+
 use crate::{
     assembler::abstract_macro_assembler::Call,
     wtf::{
@@ -35,6 +37,7 @@ pub struct LinkBuffer {
     is_already_disassembled: bool,
     is_thunk: bool,
     code: *mut u8,
+    code_rx: *const u8,
     link_tasks: Vec<Box<dyn FnOnce(&mut Self)>>,
     late_link_tasks: Vec<Box<dyn FnOnce(&mut Self)>>,
     did_allocate: bool,
@@ -42,7 +45,7 @@ pub struct LinkBuffer {
 
 impl LinkBuffer {
 
-    pub fn from_macro_assembler(macro_assembler: &mut TargetMacroAssembler) -> Self {
+    pub fn from_macro_assembler(macro_assembler: &mut TargetMacroAssembler) -> Result<Self, jit_allocator::Error> {
         let mut this = Self {
             executable_memory: None,
             size: 0,
@@ -51,29 +54,31 @@ impl LinkBuffer {
             code: null_mut(),
             link_tasks: vec![],
             late_link_tasks: vec![],
-            did_allocate: false 
+            did_allocate: false,
+            code_rx: null_mut()
         };
 
-        this.link_code(macro_assembler);
+        this.link_code(macro_assembler)?;
 
-        this 
+        Ok(this)
     }
 
-    pub fn from_code(macro_assembler: &mut TargetMacroAssembler, code: *mut u8, size: usize) -> Self {
+    pub fn from_code(macro_assembler: &mut TargetMacroAssembler, code_rx: *const u8, code_rw: *mut u8, size: usize) -> Result<Self, jit_allocator::Error> {
         let mut this = Self {
             executable_memory: None,
             size,
             is_already_disassembled: false,
             is_thunk: false,
-            code,
+            code: code_rw,
+            code_rx,
             link_tasks: vec![],
             late_link_tasks: vec![],
-            did_allocate: false 
+            did_allocate: false ,
         };
 
-        this.link_code(macro_assembler);
+        this.link_code(macro_assembler)?;
 
-        this 
+        Ok(this) 
     }
 
     pub fn location_of_near_call(&self, call: Call) -> (*mut u8, bool) {
@@ -140,27 +145,39 @@ impl LinkBuffer {
 
     pub fn link_call(&mut self, call: Call, function: *const u8) {
         unsafe {
+            protect_jit_memory(ProtectJitAccess::ReadWrite);
             TargetMacroAssembler::link_call(self.code(), call, function);
+            protect_jit_memory(ProtectJitAccess::ReadExecute);
+            flush_instruction_cache(self.code_rx, self.size);
         }
     }
 
     pub fn link_jump(&mut self, jump: Jump, target: *const u8) {
         unsafe {
+            protect_jit_memory(ProtectJitAccess::ReadWrite);
             TargetAssembler::link_jump_(self.code(), jump.label, target as *mut u8);
+            protect_jit_memory(ProtectJitAccess::ReadExecute);
+            flush_instruction_cache(self.code_rx, self.size);
         }
     }
 
     pub fn link_jumps(&mut self, jump: &JumpList, target: *const u8) {
         unsafe {
+            protect_jit_memory(ProtectJitAccess::ReadWrite);
             for jump in jump.jumps() {
                 TargetAssembler::link_jump_(self.code(), jump.label, target as *mut u8);
             }
+            protect_jit_memory(ProtectJitAccess::ReadExecute);
+            flush_instruction_cache(self.code_rx, self.size);
         }
     }
 
     pub fn patch(&mut self, label: DataLabelPtr, value: *const u8) {
         unsafe {
+            protect_jit_memory(ProtectJitAccess::ReadWrite);
             TargetAssembler::link_pointer(self.code(), label.label, value as *mut u8);
+            protect_jit_memory(ProtectJitAccess::ReadExecute);
+            flush_instruction_cache(self.code_rx, self.size);
         }
     }
 
@@ -168,18 +185,21 @@ impl LinkBuffer {
         self.code()
     }
 
-    pub fn link_code(&mut self, macro_assembler: &mut TargetMacroAssembler) {
+    pub fn link_code(&mut self, macro_assembler: &mut TargetMacroAssembler) -> Result<(), jit_allocator::Error>{
         macro_assembler.pad_before_patch();
 
-        self.allocate(macro_assembler);
+        self.allocate(macro_assembler)?;
         if !self.did_allocate {
-            return;
+            return Ok(());
         }
 
         let buffer = macro_assembler.assembler.buffer().data();
 
         unsafe {
+            protect_jit_memory(ProtectJitAccess::ReadWrite);
             std::ptr::copy_nonoverlapping(buffer.as_ptr(), self.code, buffer.len());
+            protect_jit_memory(ProtectJitAccess::ReadExecute);
+            flush_instruction_cache(self.code_rx, self.size);
         }
 
        
@@ -188,6 +208,8 @@ impl LinkBuffer {
         self.late_link_tasks = std::mem::take(&mut macro_assembler.late_link_tasks);
 
         self.link_comments(macro_assembler);
+
+        Ok(())
     }
 
     pub fn finalize_without_disassembly(&mut self) -> CodeRef {
@@ -232,18 +254,18 @@ impl LinkBuffer {
     }
 
 
-    fn allocate(&mut self, macro_assembler: &mut TargetMacroAssembler) {
+    fn allocate(&mut self, macro_assembler: &mut TargetMacroAssembler) -> Result<(), jit_allocator::Error> {
         let mut initial_size = macro_assembler.code_size();
 
         if !self.code.is_null() {
             if initial_size > self.size {
-                return;
+                return Ok(());
             }
 
             let nops_to_fill_in_bytes = self.size - initial_size;
             macro_assembler.emit_nops(nops_to_fill_in_bytes);
             self.did_allocate = true;
-            return;
+            return Ok(());
         }
 
         while initial_size % 32 != 0 {
@@ -253,12 +275,15 @@ impl LinkBuffer {
 
         
 
-        let memory = allocate_executable_memory(initial_size, 16);
-
-        self.size = (memory.end() - memory.start()) as usize;
+        let (rx, rw) = allocate_executable_memory(initial_size)?;
+        
+        self.size = initial_size as usize;
         self.did_allocate = true;
-        self.code = memory.start() as _;
-        self.executable_memory = Some(ExecutableMemoryHandle::new(memory, initial_size));
+        self.code = rw;
+        self.code_rx = rx;
+        self.executable_memory = Some(ExecutableMemoryHandle::new(rx, rw, initial_size));
+
+        Ok(())
       
     }
 

@@ -1,6 +1,5 @@
 pub mod code_ptr;
 pub mod executable_memory_handle;
-pub mod virtual_memory;
 
 
 use core::ops::*;
