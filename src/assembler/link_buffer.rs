@@ -81,6 +81,7 @@ impl LinkBuffer {
         Ok(this) 
     }
 
+   
     pub fn location_of_near_call(&self, call: Call) -> (*mut u8, bool) {
         assert!(call.is_flag_set(Call::LINKABLE));
         assert!(call.is_flag_set(Call::NEAR));
@@ -107,6 +108,34 @@ impl LinkBuffer {
             Location::PatchableJump(label) => self.get_linker_address(label.label),
             _ => unreachable!("Use location_of_near_call for NearCall"),
         }
+    }
+
+    pub fn rx_location_of(&self, location: impl Into<Location>) -> *const u8 {
+        match location.into() {
+            Location::Call(call) => {
+                assert!(call.is_flag_set(Call::LINKABLE));
+                assert!(!call.is_flag_set(Call::NEAR));
+
+                self.get_rx_linker_address(call.label)
+            }
+            Location::Label(label) => self.get_rx_linker_address(label.label),
+            Location::ConvertibleLoadLabel(label) => self.get_rx_linker_address(label.label),
+            Location::DataLabel32(label) => self.get_rx_linker_address(label.label),
+            Location::DataLabelPtr(label) => self.get_rx_linker_address(label.label),
+            Location::DataLabelCompact(label) => self.get_rx_linker_address(label.label),
+            Location::PatchableJump(label) => self.get_rx_linker_address(label.label),
+            _ => unreachable!("Use location_of_near_call for NearCall"),
+        }
+    }
+
+    pub fn rx_location_of_near_call(&self, call: Call) -> (*const u8, bool) {
+        assert!(call.is_flag_set(Call::LINKABLE));
+        assert!(call.is_flag_set(Call::NEAR));
+
+        (
+            self.get_rx_linker_address(call.label),
+            call.is_flag_set(Call::TAIL),
+        )
     }
 
     /// This method obtains the return address of the call, given as an offset from
@@ -327,8 +356,14 @@ impl LinkBuffer {
         self.code
     }
 
-    fn get_linker_address(&self, src: AssemblerLabel) -> *mut u8 {
+    pub fn get_linker_address(&self, src: AssemblerLabel) -> *mut u8 {
         let code = unsafe { AbstractMacroAssembler::get_linker_address(self.code(), src) };
+
+        code
+    }
+
+    pub fn get_rx_linker_address(&self, src: AssemblerLabel) -> *const u8 {
+        let code = unsafe { AbstractMacroAssembler::get_linker_address(self.code_rx as _, src) };
 
         code
     }

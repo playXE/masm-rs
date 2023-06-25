@@ -50,7 +50,7 @@ impl ExecutableMemoryHandle {
 
 impl Drop for ExecutableMemoryHandle {
     fn drop(&mut self) {
-        free_executable_memory(self.rx);
+        let _ = free_executable_memory(self.rx);
     }
 }
 
