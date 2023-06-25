@@ -73,9 +73,9 @@ dependencies = [
 
 [[package]]
 name = "jit-allocator"
-version = "0.2.0"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c70c411cfff98deb65983940e538f9f4d4d36b8083c4d98f97083121cde79434"
+checksum = "466f768777f2aef56e31560c79bbe59bb09d95b4b8df16b1e870908222f64b09"
 dependencies = [
  "cfgenius",
  "errno",
