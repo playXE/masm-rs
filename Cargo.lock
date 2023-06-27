@@ -73,9 +73,9 @@ dependencies = [
 
 [[package]]
 name = "jit-allocator"
-version = "0.2.3"
+version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b9df968c6633fa4ffcccf661c28c4ea2c15046ec1bbec2bb3fc44c26b2117be3"
+checksum = "a6a8385174e58e217b188b52aacaf60798a2ecb82bd15c2911656739938bf92a"
 dependencies = [
  "cfgenius",
  "errno",
@@ -98,9 +98,9 @@ dependencies = [
 
 [[package]]
 name = "libc"
-version = "0.2.146"
+version = "0.2.147"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f92be4933c13fd498862a9e02a3055f8a8d9c039ce33db97306fd5a6caa7f29b"
+checksum = "b4668fb0ea861c1df094127ac5f1da3409a82116a4ba74fca2e58ef927159bb3"
 
 [[package]]
 name = "lock_api"
