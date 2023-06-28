@@ -73,9 +73,9 @@ dependencies = [
 
 [[package]]
 name = "jit-allocator"
-version = "0.2.4"
+version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a6a8385174e58e217b188b52aacaf60798a2ecb82bd15c2911656739938bf92a"
+checksum = "b888c5265b9f5fc7458e4c53ce055a78ec17ce6c02aae41e8d7e1596ab9a4f04"
 dependencies = [
  "cfgenius",
  "errno",
@@ -343,9 +343,9 @@ dependencies = [
 
 [[package]]
 name = "windows-targets"
-version = "0.48.0"
+version = "0.48.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b1eb6f0cd7c80c79759c929114ef071b87354ce476d9d94271031c0497adfd5"
+checksum = "05d4b17490f70499f20b9e791dcf6a299785ce8af4d709018206dc5b4953e95f"
 dependencies = [
  "windows_aarch64_gnullvm",
  "windows_aarch64_msvc",

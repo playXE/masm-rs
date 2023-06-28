@@ -2,7 +2,12 @@
 name = "macroassembler"
 version = "0.1.0"
 edition = "2021"
-
+authors = ["Adel Prokurov <adel.prokurov@gmail.com>"]
+license = "MIT OR Apache-2.0"
+description = "A library for writing portable x86-64/riscv64/aarch64 assembly code in Rust"
+repository = "https://github.com/playxe/masm-rs"
+readme = "README.md"
+keywords = ["jit", "assembler", "codegen"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
