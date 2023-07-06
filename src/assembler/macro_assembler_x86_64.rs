@@ -673,7 +673,6 @@ impl MacroAssemblerX86Common {
         assert!(rax == eax);
         assert!(rdx == edx);
         self.x86udiv64(denominator);
-
     }
 
     pub fn neg64(&mut self, src_dest: impl Into<Operand>) {
@@ -1825,7 +1824,11 @@ impl MacroAssemblerX86Common {
     }
 
     pub fn truncate_float_to_uint64(&mut self, src: u8, dest: u8, scratch: u8, int64_min: u8) {
-        let large = self.branch_float(DoubleCondition::GreaterThanOrEqualAndOrdered, src, int64_min);
+        let large = self.branch_float(
+            DoubleCondition::GreaterThanOrEqualAndOrdered,
+            src,
+            int64_min,
+        );
         self.assembler.cvtss2siq_rr(src, dest);
         let done = self.jump();
         large.link(self);
@@ -1833,7 +1836,8 @@ impl MacroAssemblerX86Common {
         self.move_double(src, scratch);
         self.assembler.subss_rr(int64_min, scratch);
         self.assembler.cvtss2siq_rr(scratch, dest);
-        self.assembler.movq_i64r(0x8000000000000000u64 as i64, Self::SCRATCH_REGISTER);
+        self.assembler
+            .movq_i64r(0x8000000000000000u64 as i64, Self::SCRATCH_REGISTER);
         self.assembler.orq_rr(Self::SCRATCH_REGISTER, dest);
         done.link(self);
     }
@@ -1845,7 +1849,10 @@ impl MacroAssemblerX86Common {
     pub fn convert_int64_to_double(&mut self, src: impl Into<Operand>, dest: u8) {
         match src.into() {
             Operand::Register(reg) => self.assembler.cvtsi2sdq_rr(reg, dest),
-            Operand::Address(address) => self.assembler.cvtsi2sdq_mr(address.offset, address.base, dest),
+            Operand::Address(address) => {
+                self.assembler
+                    .cvtsi2sdq_mr(address.offset, address.base, dest)
+            }
             op => unreachable!("Unexpected operand: {:?}", op),
         }
     }
@@ -1853,7 +1860,10 @@ impl MacroAssemblerX86Common {
     pub fn convert_int64_to_float(&mut self, src: impl Into<Operand>, dest: u8) {
         match src.into() {
             Operand::Register(reg) => self.assembler.cvtsi2ssq_rr(reg, dest),
-            Operand::Address(address) => self.assembler.cvtsi2ssq_mr(address.offset, address.base, dest),
+            Operand::Address(address) => {
+                self.assembler
+                    .cvtsi2ssq_mr(address.offset, address.base, dest)
+            }
             op => unreachable!("Unexpected operand: {:?}", op),
         }
     }

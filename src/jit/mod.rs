@@ -33,9 +33,9 @@ pub fn allocate_executable_memory(
 }
 
 /// Free executable memory allocated by `allocate_executable_memory`.
-/// 
-/// # Safety 
-/// 
+///
+/// # Safety
+///
 /// - `rx` must be pointer to read-execute memory allocated by `allocate_executable_memory`.
 /// - `rx` must not be null.
 /// - `rx` must not be double freed.

@@ -1,10 +1,9 @@
 pub mod code_ptr;
 pub mod executable_memory_handle;
 
-
 use core::ops::*;
-use std::mem::size_of;
 use num_traits::{FromPrimitive, NumOps, One, ToPrimitive, Zero};
+use std::mem::size_of;
 pub fn is_power_of_two<
     T: BitOr<T, Output = T>
         + BitAnd<T, Output = T>
@@ -80,7 +79,12 @@ pub fn is_aligned_ptr<
 }
 
 pub fn round_down<
-    T: BitOr<T, Output = T> + BitAnd<T, Output = T> + Not<Output = T> + Copy + FromPrimitive + ToPrimitive,
+    T: BitOr<T, Output = T>
+        + BitAnd<T, Output = T>
+        + Not<Output = T>
+        + Copy
+        + FromPrimitive
+        + ToPrimitive,
 >(
     x: T,
     alignment: isize,
@@ -89,9 +93,13 @@ pub fn round_down<
     T::from_isize(x.to_isize().unwrap() & -alignment).unwrap()
 }
 
-
 pub fn round_down_unchecked<
-    T: BitOr<T, Output = T> + BitAnd<T, Output = T> + Not<Output = T> + Copy + FromPrimitive + ToPrimitive,
+    T: BitOr<T, Output = T>
+        + BitAnd<T, Output = T>
+        + Not<Output = T>
+        + Copy
+        + FromPrimitive
+        + ToPrimitive,
 >(
     x: T,
     alignment: isize,
@@ -113,7 +121,8 @@ pub fn round_up<
         + Not<Output = T>
         + Copy
         + BitAnd<T, Output = T>
-        + FromPrimitive + ToPrimitive,
+        + FromPrimitive
+        + ToPrimitive,
 >(
     x: T,
     alignment: usize,
@@ -126,7 +135,6 @@ pub fn round_up<
     ) - T::from_usize(offset).unwrap()
 }
 
-
 pub fn round_up_unchecked<
     T: One
         + NumOps
@@ -134,7 +142,8 @@ pub fn round_up_unchecked<
         + Not<Output = T>
         + Copy
         + BitAnd<T, Output = T>
-        + FromPrimitive + ToPrimitive,
+        + FromPrimitive
+        + ToPrimitive,
 >(
     x: T,
     alignment: usize,

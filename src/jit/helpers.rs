@@ -8,15 +8,14 @@ pub trait AssemblyHelpers {
 
     fn preserve_return_address_after_call(&mut self, reg: u8);
     fn restore_return_address_before_return(&mut self, op: impl Into<Operand>);
-
 }
 
-#[cfg(target_arch="x86_64")]
-use crate::assembler::x86assembler::*;
-#[cfg(target_arch="riscv64")]
+#[cfg(target_arch = "riscv64")]
 use crate::assembler::riscv64assembler::*;
+#[cfg(target_arch = "x86_64")]
+use crate::assembler::x86assembler::*;
 
-#[cfg(target_arch="riscv64")]
+#[cfg(target_arch = "riscv64")]
 impl AssemblyHelpers for TargetMacroAssembler {
     fn emit_function_prologue(&mut self) {
         self.push_pair(Self::FRAME_POINTER_REGISTER, Self::LINK_REGISTER);
@@ -36,13 +35,13 @@ impl AssemblyHelpers for TargetMacroAssembler {
         match op.into() {
             Operand::Register(reg) => {
                 self.mov(reg, Self::LINK_REGISTER);
-            },
+            }
 
             Operand::Address(addr) => {
                 self.load64(addr, Self::LINK_REGISTER);
-            },
+            }
 
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
@@ -51,7 +50,7 @@ impl AssemblyHelpers for TargetMacroAssembler {
     }
 }
 
-#[cfg(target_arch="x86_64")]
+#[cfg(target_arch = "x86_64")]
 impl AssemblyHelpers for TargetMacroAssembler {
     fn emit_function_prologue(&mut self) {
         self.push(Self::FRAME_POINTER_REGISTER);

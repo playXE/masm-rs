@@ -3,7 +3,7 @@ use std::ops::{Deref, DerefMut};
 use crate::wtf::code_ptr::CodePtr;
 
 pub struct CodeLocationCommon<PtrTag> {
-    pub value: CodePtr<PtrTag>
+    pub value: CodePtr<PtrTag>,
 }
 
 impl<PtrTag> Deref for CodeLocationCommon<PtrTag> {
@@ -22,9 +22,7 @@ impl<PtrTag> DerefMut for CodeLocationCommon<PtrTag> {
 
 impl<PtrTag> CodeLocationCommon<PtrTag> {
     pub fn new(value: CodePtr<PtrTag>) -> Self {
-        CodeLocationCommon {
-            value
-        }
+        CodeLocationCommon { value }
     }
 
     pub fn instruction_at_offset(&self, offset: isize) -> CodeLocationInstruction<PtrTag> {
@@ -38,7 +36,7 @@ impl<PtrTag> CodeLocationCommon<PtrTag> {
     pub fn jump_at_offset(&self, offset: isize) -> CodeLocationJump<PtrTag> {
         CodeLocationJump::new(CodePtr::from_usize(self.value.as_usize() + offset as usize))
     }
-    
+
     pub fn call_at_offset(&self, offset: isize) -> CodeLocationCall<PtrTag> {
         CodeLocationCall::new(CodePtr::from_usize(self.value.as_usize() + offset as usize))
     }
@@ -56,7 +54,9 @@ impl<PtrTag> CodeLocationCommon<PtrTag> {
     }
 
     pub fn convertible_load_at_offset(&self, offset: isize) -> CodeLocationConvertibleLoad<PtrTag> {
-        CodeLocationConvertibleLoad::new(CodePtr::from_usize(self.value.as_usize() + offset as usize))
+        CodeLocationConvertibleLoad::new(CodePtr::from_usize(
+            self.value.as_usize() + offset as usize,
+        ))
     }
 }
 
@@ -67,7 +67,7 @@ pub struct CodeLocationLabel<PtrTag> {
 impl<PtrTag> CodeLocationLabel<PtrTag> {
     pub fn new(value: CodePtr<PtrTag>) -> Self {
         CodeLocationLabel {
-            common: CodeLocationCommon::new(value)
+            common: CodeLocationCommon::new(value),
         }
     }
 }
@@ -93,7 +93,7 @@ pub struct CodeLocationJump<PtrTag> {
 impl<PtrTag> CodeLocationJump<PtrTag> {
     pub fn new(value: CodePtr<PtrTag>) -> Self {
         CodeLocationJump {
-            common: CodeLocationCommon::new(value)
+            common: CodeLocationCommon::new(value),
         }
     }
 }
@@ -119,7 +119,7 @@ pub struct CodeLocationInstruction<PtrTag> {
 impl<PtrTag> CodeLocationInstruction<PtrTag> {
     pub fn new(value: CodePtr<PtrTag>) -> Self {
         CodeLocationInstruction {
-            common: CodeLocationCommon::new(value)
+            common: CodeLocationCommon::new(value),
         }
     }
 }
@@ -145,7 +145,7 @@ pub struct CodeLocationCall<PtrTag> {
 impl<PtrTag> CodeLocationCall<PtrTag> {
     pub fn new(value: CodePtr<PtrTag>) -> Self {
         CodeLocationCall {
-            common: CodeLocationCommon::new(value)
+            common: CodeLocationCommon::new(value),
         }
     }
 }
@@ -171,7 +171,7 @@ pub struct CodeLocationNearCall<PtrTag> {
 impl<PtrTag> CodeLocationNearCall<PtrTag> {
     pub fn new(value: CodePtr<PtrTag>) -> Self {
         CodeLocationNearCall {
-            common: CodeLocationCommon::new(value)
+            common: CodeLocationCommon::new(value),
         }
     }
 }
@@ -197,7 +197,7 @@ pub struct CodeLocationDataLabelPtr<PtrTag> {
 impl<PtrTag> CodeLocationDataLabelPtr<PtrTag> {
     pub fn new(value: CodePtr<PtrTag>) -> Self {
         CodeLocationDataLabelPtr {
-            common: CodeLocationCommon::new(value)
+            common: CodeLocationCommon::new(value),
         }
     }
 }
@@ -223,7 +223,7 @@ pub struct CodeLocationDataLabel32<PtrTag> {
 impl<PtrTag> CodeLocationDataLabel32<PtrTag> {
     pub fn new(value: CodePtr<PtrTag>) -> Self {
         CodeLocationDataLabel32 {
-            common: CodeLocationCommon::new(value)
+            common: CodeLocationCommon::new(value),
         }
     }
 }
@@ -249,7 +249,7 @@ pub struct CodeLocationConvertibleLoad<PtrTag> {
 impl<PtrTag> CodeLocationConvertibleLoad<PtrTag> {
     pub fn new(value: CodePtr<PtrTag>) -> Self {
         CodeLocationConvertibleLoad {
-            common: CodeLocationCommon::new(value)
+            common: CodeLocationCommon::new(value),
         }
     }
 }

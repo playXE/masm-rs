@@ -157,7 +157,6 @@ impl<PtrTag> std::ops::AddAssign<CodePtr<PtrTag>> for CodePtr<PtrTag> {
     }
 }
 
-
 impl<PtrTag> std::ops::SubAssign<CodePtr<PtrTag>> for CodePtr<PtrTag> {
     fn sub_assign(&mut self, rhs: CodePtr<PtrTag>) {
         self.value = unsafe { self.value.offset(-(rhs.value as isize)) };
@@ -180,4 +179,3 @@ impl<PtrTag> std::ops::AddAssign<&CodePtr<PtrTag>> for CodePtr<PtrTag> {
         self.value = unsafe { self.value.offset(rhs.value as isize) };
     }
 }
-

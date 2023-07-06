@@ -1,8 +1,11 @@
-use std::{ops::{Deref, DerefMut}, borrow::Cow};
+use std::{
+    borrow::Cow,
+    ops::{Deref, DerefMut},
+};
 
 use tinyvec::TinyVec;
 
-use super::{buffer::AssemblerLabel, *, link_buffer::LinkBuffer};
+use super::{buffer::AssemblerLabel, link_buffer::LinkBuffer, *};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 #[repr(u8)]
@@ -564,7 +567,7 @@ impl AbstractMacroAssembler {
     pub fn debug_offset(&mut self) -> usize {
         self.assembler.debug_offset()
     }
-    
+
     pub unsafe fn link_jump_(code: *mut u8, jump: Jump, target: *mut u8) {
         TargetAssembler::link_jump_(code, jump.label, target);
     }
@@ -623,14 +626,17 @@ impl AbstractMacroAssembler {
 
     pub fn emit_nops(&mut self, memory_to_fill_with_nops_in_bytes: usize) {
         let buffer = self.assembler.buffer_mut();
-        
+
         let start_code_size = buffer.code_size();
         let target_code_size = start_code_size + memory_to_fill_with_nops_in_bytes;
 
         buffer.ensure_space(target_code_size);
 
         unsafe {
-            TargetAssembler::fill_nops(buffer.data_mut().as_mut_ptr().add(start_code_size), memory_to_fill_with_nops_in_bytes);
+            TargetAssembler::fill_nops(
+                buffer.data_mut().as_mut_ptr().add(start_code_size),
+                memory_to_fill_with_nops_in_bytes,
+            );
         }
 
         buffer.set_code_size(target_code_size);
@@ -656,7 +662,6 @@ impl AbstractMacroAssembler {
 
     pub fn pad_before_patch(&mut self) {
         let _ = self.label();
-        
     }
 }
 
@@ -668,7 +673,7 @@ pub enum Location {
     DataLabelPtr(DataLabelPtr),
     DataLabel32(DataLabel32),
     DataLabelCompact(DataLabelCompact),
-    ConvertibleLoadLabel(ConvertibleLoadLabel)
+    ConvertibleLoadLabel(ConvertibleLoadLabel),
 }
 
 impl Into<Location> for Call {

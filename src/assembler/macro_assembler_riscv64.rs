@@ -4506,9 +4506,10 @@ impl MacroAssemblerRISCV64 {
         self.assembler
             .sign_extend(Self::DATA_TEMP_REGISTER, lhs, 32);
 
-        self.assembler.and(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, rhs);
+        self.assembler
+            .and(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, rhs);
         self.test_finalize(cond, Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER);
-        
+
         self.assembler.beq(Self::DATA_TEMP_REGISTER, zero, 12);
         self.assembler.fsgnj::<64>(dest, then_case, then_case);
         self.assembler.jal(zero, 8);
@@ -4537,7 +4538,7 @@ impl MacroAssemblerRISCV64 {
 
         self.assembler.and(Self::DATA_TEMP_REGISTER, lhs, rhs);
         self.test_finalize(cond, Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER);
-        
+
         self.assembler.beq(Self::DATA_TEMP_REGISTER, zero, 12);
         self.assembler.fsgnj::<64>(dest, then_case, then_case);
         self.assembler.jal(zero, 8);

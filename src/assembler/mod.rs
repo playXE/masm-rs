@@ -1,18 +1,17 @@
+pub mod abstract_macro_assembler;
+pub mod assembler_common;
+pub mod assembly_comments;
 pub mod buffer;
 pub mod code_location;
 pub mod common;
-pub mod abstract_macro_assembler;
-pub mod link_buffer;
-pub mod assembly_comments;
 pub mod disassembler;
-
+pub mod link_buffer;
 
 use std::mem::size_of;
 
 use cfg_if::*;
 
 use self::abstract_macro_assembler::Address;
-
 
 cfg_if! {
     if #[cfg(target_arch = "x86_64")] {
@@ -33,11 +32,20 @@ cfg_if! {
         pub use macro_assembler_riscv64::{RelationalCondition, ZeroCondition, DoubleCondition, ResultCondition};
         pub type TargetAssembler = riscv64assembler::RISCV64Assembler;
         pub type TargetMacroAssembler = macro_assembler_riscv64::MacroAssemblerRISCV64;
+    } else if #[cfg(target_arch="aarch64")] {
+        #[macro_use]
+        pub mod arm64registers;
+        pub mod arm64assembler;
+        pub mod macro_assembler_arm64;
+
+        pub type TargetAssembler = arm64assembler::ARM64Assembler;
+        pub type TargetMacroAssembler = macro_assembler_arm64::MacroAssemblerARM64;
     } else {
         compile_error!("Unsupported architecture");
     }
 }
 
+#[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
 impl TargetMacroAssembler {
     pub fn ret32(&mut self, _: u8) {
         self.ret();
@@ -109,4 +117,3 @@ impl TargetMacroAssembler {
         self.add64(size_of::<f64>() as i32, Self::STACK_POINTER_REGISTER);
     }
 }
-

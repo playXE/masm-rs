@@ -1,4 +1,3 @@
-
 #[macro_export]
 macro_rules! for_each_gp_register {
     ($m: path) => {
@@ -78,7 +77,6 @@ macro_rules! for_each_fp_register {
         }
     };
 }
-
 
 #[macro_export]
 macro_rules! for_each_sp_register {

@@ -3475,11 +3475,12 @@ impl MacroAssemblerX86Common {
     }
 
     pub fn is_invertible(cond: ResultCondition) -> bool {
-        matches!(cond,
+        matches!(
+            cond,
             ResultCondition::Zero
-            | ResultCondition::NonZero
-            | ResultCondition::Signed
-            | ResultCondition::PositiveOrZero
+                | ResultCondition::NonZero
+                | ResultCondition::Signed
+                | ResultCondition::PositiveOrZero
         )
     }
 

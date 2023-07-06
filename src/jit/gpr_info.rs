@@ -206,7 +206,9 @@ cfg_if! {
         }
 
         pub const NUMBER_OF_ARGUMENT_REGISTERS: usize = 8;
+    } else if #[cfg(target_arch="aarch64")] {
+
     } else {
-        compile_error!("Unsupported architecture")
+        compile_error!("Unsupported architecture");
     }
 }

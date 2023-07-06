@@ -1,19 +1,21 @@
 use std::{collections::hash_map::Entry, ptr::null_mut};
 
-use jit_allocator::{protect_jit_memory, ProtectJitAccess, flush_instruction_cache};
+use jit_allocator::{flush_instruction_cache, protect_jit_memory, ProtectJitAccess};
 
 use crate::{
     assembler::abstract_macro_assembler::Call,
-    wtf::{
-        executable_memory_handle::{ExecutableMemoryHandle, CodeRef},
-    }, jit::allocate_executable_memory,
+    jit::allocate_executable_memory,
+    wtf::executable_memory_handle::{CodeRef, ExecutableMemoryHandle},
 };
 
 use super::{
-    abstract_macro_assembler::{AbstractMacroAssembler, Label, Location, PatchableJump, Jump, JumpList, DataLabelPtr},
+    abstract_macro_assembler::{
+        AbstractMacroAssembler, DataLabelPtr, Jump, JumpList, Label, Location, PatchableJump,
+    },
     assembly_comments::{AssemblyCommentsRegistry, CommentMap},
     buffer::AssemblerLabel,
-    TargetMacroAssembler, disassembler::try_to_disassemble, TargetAssembler,
+    disassembler::try_to_disassemble,
+    TargetAssembler, TargetMacroAssembler,
 };
 use std::sync::Arc;
 
@@ -44,8 +46,9 @@ pub struct LinkBuffer {
 }
 
 impl LinkBuffer {
-
-    pub fn from_macro_assembler(macro_assembler: &mut TargetMacroAssembler) -> Result<Self, jit_allocator::Error> {
+    pub fn from_macro_assembler(
+        macro_assembler: &mut TargetMacroAssembler,
+    ) -> Result<Self, jit_allocator::Error> {
         let mut this = Self {
             executable_memory: None,
             size: 0,
@@ -55,7 +58,7 @@ impl LinkBuffer {
             link_tasks: vec![],
             late_link_tasks: vec![],
             did_allocate: false,
-            code_rx: null_mut()
+            code_rx: null_mut(),
         };
 
         this.link_code(macro_assembler)?;
@@ -63,7 +66,12 @@ impl LinkBuffer {
         Ok(this)
     }
 
-    pub fn from_code(macro_assembler: &mut TargetMacroAssembler, code_rx: *const u8, code_rw: *mut u8, size: usize) -> Result<Self, jit_allocator::Error> {
+    pub fn from_code(
+        macro_assembler: &mut TargetMacroAssembler,
+        code_rx: *const u8,
+        code_rw: *mut u8,
+        size: usize,
+    ) -> Result<Self, jit_allocator::Error> {
         let mut this = Self {
             executable_memory: None,
             size,
@@ -73,15 +81,14 @@ impl LinkBuffer {
             code_rx,
             link_tasks: vec![],
             late_link_tasks: vec![],
-            did_allocate: false ,
+            did_allocate: false,
         };
 
         this.link_code(macro_assembler)?;
 
-        Ok(this) 
+        Ok(this)
     }
 
-   
     pub fn location_of_near_call(&self, call: Call) -> (*mut u8, bool) {
         assert!(call.is_flag_set(Call::LINKABLE));
         assert!(call.is_flag_set(Call::NEAR));
@@ -218,7 +225,10 @@ impl LinkBuffer {
         self.code()
     }
 
-    pub fn link_code(&mut self, macro_assembler: &mut TargetMacroAssembler) -> Result<(), jit_allocator::Error>{
+    pub fn link_code(
+        &mut self,
+        macro_assembler: &mut TargetMacroAssembler,
+    ) -> Result<(), jit_allocator::Error> {
         macro_assembler.pad_before_patch();
 
         self.allocate(macro_assembler)?;
@@ -235,8 +245,6 @@ impl LinkBuffer {
             flush_instruction_cache(self.code_rx, self.size);
         }
 
-       
-
         self.link_tasks = std::mem::take(&mut macro_assembler.link_tasks);
         self.late_link_tasks = std::mem::take(&mut macro_assembler.late_link_tasks);
 
@@ -249,7 +257,12 @@ impl LinkBuffer {
         self.finalize_code_without_disassembly_impl()
     }
 
-    pub fn finalize_with_disassembly(&mut self, dump_disassembly: bool, format: &str, out: &mut impl std::fmt::Write) -> Result<CodeRef, std::fmt::Error> {
+    pub fn finalize_with_disassembly(
+        &mut self,
+        dump_disassembly: bool,
+        format: &str,
+        out: &mut impl std::fmt::Write,
+    ) -> Result<CodeRef, std::fmt::Error> {
         self.finalize_code_with_disassembly_impl(dump_disassembly, format, out)
     }
 
@@ -261,8 +274,13 @@ impl LinkBuffer {
         } else {
             CodeRef::SelfManaged((self.code, self.size))
         }
-    } 
-    fn finalize_code_with_disassembly_impl<W: std::fmt::Write>(&mut self, dump_disassembly: bool, format: &str, out: &mut W) -> Result<CodeRef, std::fmt::Error> {
+    }
+    fn finalize_code_with_disassembly_impl<W: std::fmt::Write>(
+        &mut self,
+        dump_disassembly: bool,
+        format: &str,
+        out: &mut W,
+    ) -> Result<CodeRef, std::fmt::Error> {
         let result = self.finalize_code_without_disassembly_impl();
         let just_dumping_header = !dump_disassembly || self.is_already_disassembled;
 
@@ -270,12 +288,14 @@ impl LinkBuffer {
 
         let executable_address = result.start();
         let executable_end = result.end();
-       
-        write!(out, "    Code at [{:p}, {:p}){}\n", executable_address, executable_end, if just_dumping_header {
-            "."
-        } else {
-            ":"
-        })?;
+
+        write!(
+            out,
+            "    Code at [{:p}, {:p}){}\n",
+            executable_address,
+            executable_end,
+            if just_dumping_header { "." } else { ":" }
+        )?;
 
         if just_dumping_header {
             return Ok(result);
@@ -283,15 +303,22 @@ impl LinkBuffer {
 
         // # Safety
         //  we just allocated the code and it is for sure a valid pointer
-        unsafe { 
-            try_to_disassemble(result.start(), result.end() as usize - result.start() as usize, "    ", out)?;
+        unsafe {
+            try_to_disassemble(
+                result.start(),
+                result.end() as usize - result.start() as usize,
+                "    ",
+                out,
+            )?;
         }
 
         Ok(result)
     }
 
-
-    fn allocate(&mut self, macro_assembler: &mut TargetMacroAssembler) -> Result<(), jit_allocator::Error> {
+    fn allocate(
+        &mut self,
+        macro_assembler: &mut TargetMacroAssembler,
+    ) -> Result<(), jit_allocator::Error> {
         let mut initial_size = macro_assembler.code_size();
 
         if !self.code.is_null() {
@@ -310,10 +337,8 @@ impl LinkBuffer {
             initial_size = macro_assembler.code_size();
         }
 
-        
-
         let (rx, rw) = allocate_executable_memory(initial_size)?;
-        
+
         self.size = initial_size as usize;
         self.did_allocate = true;
         self.code = rw;
@@ -321,7 +346,6 @@ impl LinkBuffer {
         self.executable_memory = Some(ExecutableMemoryHandle::new(rx, rw, initial_size));
 
         Ok(())
-      
     }
 
     fn perform_finalization(&mut self) {
@@ -376,5 +400,3 @@ impl LinkBuffer {
         code
     }
 }
-
-

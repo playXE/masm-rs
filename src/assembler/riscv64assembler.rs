@@ -212,8 +212,8 @@ macro_rules! decl_immediate {
 
             pub fn is_valid<T: num::PrimInt + num::NumCast>(imm_value: T) -> bool {
                 let shift = std::mem::size_of::<T>() * 8 - $immediate_size;
-                
-               
+
+
                 imm_value == T::from((imm_value.to_i64().unwrap() << shift) >> shift).unwrap()
             }
 
@@ -1797,14 +1797,18 @@ impl RISCV64Assembler {
 
     pub fn fcvt_ui2fp<const FP_SIZE: usize>(&mut self, rd: u8, rs1: u8, rm: FPRoundingMode) {
         if FP_SIZE == 32 {
-            
             self.insn(FCVT_S_WU::construct(rd, rs1, rm));
         } else {
             self.insn(FCVT_S_LU::construct(rd, rs1, rm));
         }
     }
 
-    pub fn fcvt_fp2fp<const FP_SIZE: usize, const FP_SIZE2: usize>(&mut self, rd: u8, rs1: u8, rm: FPRoundingMode) {
+    pub fn fcvt_fp2fp<const FP_SIZE: usize, const FP_SIZE2: usize>(
+        &mut self,
+        rd: u8,
+        rs1: u8,
+        rm: FPRoundingMode,
+    ) {
         if FP_SIZE == 32 && FP_SIZE2 == 64 {
             self.insn(FCVT_D_S::construct(rd, rs1, rm));
         } else if FP_SIZE == 64 && FP_SIZE2 == 32 {
@@ -2293,7 +2297,6 @@ impl ImmediateLoader {
         };
         // If the immediate value fits into the IImmediate mold, we can short-cut to just generating that through a single ADDI.
         if IImmediate::is_valid(imm) {
-            
             this.ops[this.opcount] = ImmOp {
                 op_type: ImmOpType::IImmediate,
                 value: IImmediate::v32::<i32>(imm as i32) as u32,
@@ -2366,7 +2369,7 @@ impl ImmediateLoader {
     pub fn move_into(&self, assembler: &mut RISCV64Assembler, dest: u8) {
         // This is a helper method that generates the necessary instructions through the RISCV64Assembler infrastructure.
         // Operations are traversed in reverse in order to match the generation process.
-       
+
         for i in 0..self.opcount {
             let op = self.ops[self.opcount - (i + 1)];
 

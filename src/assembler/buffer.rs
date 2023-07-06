@@ -251,7 +251,6 @@ impl AssemblerBuffer {
     pub fn code_size(&self) -> usize {
         self.index
     }
-
 }
 
 /// LocalWriter is a trick to keep the storage buffer and the index
