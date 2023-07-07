@@ -7,7 +7,8 @@ use std::{
 
 use super::{
     assembler_common::{
-        is_valid_scaled_uimm12, is_valid_signed_imm9, ARM64LogicalImmediate, SIMDLane,
+        is_valid_scaled_uimm12, is_valid_signed_imm7, is_valid_signed_imm9, ARM64LogicalImmediate,
+        SIMDLane,
     },
     buffer::{AssemblerBuffer, AssemblerLabel},
 };
@@ -191,6 +192,41 @@ impl Into<i32> for PairPostIndex {
 }
 
 impl Into<u32> for PairPostIndex {
+    fn into(self) -> u32 {
+        self.0 as u32
+    }
+}
+
+pub struct PairPreIndex(pub i32);
+
+impl PairPreIndex {
+    pub const fn new(value: i32) -> Self {
+        assert!(is_int::<11>(value));
+        PairPreIndex(value)
+    }
+}
+
+impl Deref for PairPreIndex {
+    type Target = i32;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for PairPreIndex {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl Into<i32> for PairPreIndex {
+    fn into(self) -> i32 {
+        self.0
+    }
+}
+
+impl Into<u32> for PairPreIndex {
     fn into(self) -> u32 {
         self.0 as u32
     }
@@ -542,6 +578,36 @@ const fn datasize(x: i32) -> Datasize {
     }
 }
 
+fn mem_pair_op_size(x: i32) -> MemPairOpSize {
+    if x == 64 {
+        MemPairOpSize::S64
+    } else {
+        MemPairOpSize::S32
+    }
+}
+
+fn mem_pair_op_size_fp(x: i32) -> MemPairOpSize {
+    if x == 64 {
+        MemPairOpSize::V64
+    } else if x == 128 {
+        MemPairOpSize::V128
+    } else {
+        MemPairOpSize::V32
+    }
+}
+
+fn memopsize(x: i32) -> MemOpSize {
+    if x == 64 {
+        MemOpSize::M64
+    } else if x == 128 {
+        MemOpSize::M8Or128
+    } else if x == 16 {
+        MemOpSize::M16
+    } else {
+        MemOpSize::M32
+    }
+}
+
 const fn set_flags(x: bool) -> SetFlags {
     if !x {
         SetFlags::DontSetFlags
@@ -608,7 +674,7 @@ pub enum DataOp2Source {
 #[repr(u8)]
 pub enum DataOp3Source {
     MADD = 0,
-    MSBU = 1,
+    MSUB = 1,
     SMADDL = 2,
     SMSUBL = 3,
     SMULH = 4,
@@ -992,11 +1058,6 @@ impl ARM64Assembler {
         todo!()
     }
 
-    #[allow(unused_mut)]
-    pub unsafe fn fill_nops(base: *mut u8, mut size: usize) {
-        todo!()
-    }
-
     pub unsafe fn replace_with_address_computation(mut instruction_start: *mut u8) {
         todo!()
     }
@@ -1130,13 +1191,7 @@ impl ARM64Assembler {
         ))
     }
 
-    pub fn add<const DATASIZE: i32, const SET_FLAGS: bool>(
-        &mut self,
-        rd: u8,
-        rn: u8,
-        rm: u8,
-        
-    ) {
+    pub fn add<const DATASIZE: i32, const SET_FLAGS: bool>(&mut self, rd: u8, rn: u8, rm: u8) {
         self.add_shifted::<DATASIZE, SET_FLAGS>(rd, rn, rm, ShiftType::LSL, 0)
     }
 
@@ -1176,7 +1231,7 @@ impl ARM64Assembler {
         self.and_shifted::<DATASIZE, SET_FLAGS>(rd, rn, rm, ShiftType::LSL, 0)
     }
 
-    pub fn and_logical_immediate<const DATASIZE: i32, const SET_FLAGS: bool>(
+    pub fn and_imm<const DATASIZE: i32, const SET_FLAGS: bool>(
         &mut self,
         rd: u8,
         rn: u8,
@@ -1338,7 +1393,7 @@ impl ARM64Assembler {
             imm.0,
             cond,
             rn,
-            _nzcv
+            _nzcv,
         ))
     }
 
@@ -1349,7 +1404,7 @@ impl ARM64Assembler {
             rm,
             cond,
             rn,
-            _nzcv
+            _nzcv,
         ));
     }
 
@@ -1366,7 +1421,7 @@ impl ARM64Assembler {
             imm.0,
             cond,
             rn,
-            _nzcv
+            _nzcv,
         ))
     }
 
@@ -1377,11 +1432,2176 @@ impl ARM64Assembler {
             rm,
             cond,
             rn,
-            _nzcv
+            _nzcv,
         ));
     }
 
+    pub fn cinc<const DATASIZE: i32>(&mut self, rd: u8, rn: u8, rm: u8, cond: Condition) {
+        self.csinc::<DATASIZE>(rd, rn, rm, cond.invert());
+    }
 
+    pub fn cinv<const DATASIZE: i32>(&mut self, rd: u8, rn: u8, rm: u8, cond: Condition) {
+        self.csinv::<DATASIZE>(rd, rn, rm, cond.invert());
+    }
+
+    pub fn cls<const DATASIZE: i32>(&mut self, rd: u8, rn: u8) {
+        self.insn(Self::data_processing_1_source(
+            datasize(DATASIZE),
+            DataOp1Source::CLS,
+            rn,
+            rd,
+        ));
+    }
+
+    pub fn clz<const DATASIZE: i32>(&mut self, rd: u8, rn: u8) {
+        self.insn(Self::data_processing_1_source(
+            datasize(DATASIZE),
+            DataOp1Source::CLZ,
+            rn,
+            rd,
+        ));
+    }
+
+    pub fn cmn_imm<const DATASIZE: i32>(&mut self, rn: u8, imm12: UInt12, shift: i32) {
+        self.add_imm::<DATASIZE, true>(zr, rn, imm12, shift)
+    }
+
+    pub fn cmn<const DATASIZE: i32>(&mut self, rn: u8, rm: u8) {
+        self.add::<DATASIZE, true>(zr, rn, rm)
+    }
+
+    pub fn cmn_extend<const DATASIZE: i32>(
+        &mut self,
+        rn: u8,
+        rm: u8,
+        extend: ExtendType,
+        amount: i32,
+    ) {
+        self.add_extend::<DATASIZE, true>(zr, rn, rm, extend, amount)
+    }
+
+    pub fn cmn_shifted<const DATASIZE: i32>(
+        &mut self,
+        rn: u8,
+        rm: u8,
+        shift: ShiftType,
+        amount: i32,
+    ) {
+        self.add_shifted::<DATASIZE, true>(zr, rn, rm, shift, amount)
+    }
+
+    pub fn cmp_imm<const DATASIZE: i32>(&mut self, rn: u8, imm12: UInt12, shift: i32) {
+        self.sub_imm::<DATASIZE, true>(zr, rn, imm12, shift)
+    }
+
+    pub fn cmp<const DATASIZE: i32>(&mut self, rn: u8, rm: u8) {
+        self.sub::<DATASIZE, true>(zr, rn, rm)
+    }
+
+    pub fn cmp_extend<const DATASIZE: i32>(
+        &mut self,
+        rn: u8,
+        rm: u8,
+        extend: ExtendType,
+        amount: i32,
+    ) {
+        self.sub_extend::<DATASIZE, true>(zr, rn, rm, extend, amount)
+    }
+
+    pub fn cmp_shifted<const DATASIZE: i32>(
+        &mut self,
+        rn: u8,
+        rm: u8,
+        shift: ShiftType,
+        amount: i32,
+    ) {
+        self.sub_shifted::<DATASIZE, true>(zr, rn, rm, shift, amount)
+    }
+
+    pub fn cneg<const DATASIZE: i32>(&mut self, rd: u8, rn: u8, cond: Condition) {
+        self.csneg::<DATASIZE>(rd, rn, zr, cond.invert())
+    }
+
+    pub fn csel<const DATASIZE: i32>(&mut self, rd: u8, rn: u8, rm: u8, cond: Condition) {
+        self.insn(Self::conditional_select(
+            datasize(DATASIZE),
+            false,
+            rm,
+            cond,
+            false,
+            rn,
+            rd,
+        ))
+    }
+
+    pub fn cset<const DATASIZE: i32>(&mut self, rd: u8, cond: Condition) {
+        self.csinc::<DATASIZE>(rd, zr, zr, cond.invert())
+    }
+
+    pub fn csetm<const DATASIZE: i32>(&mut self, rd: u8, cond: Condition) {
+        self.csinv::<DATASIZE>(rd, zr, zr, cond.invert())
+    }
+
+    pub fn csneg<const DATASIZE: i32>(&mut self, rd: u8, rn: u8, rm: u8, cond: Condition) {
+        self.insn(Self::conditional_select(
+            datasize(DATASIZE),
+            true,
+            rm,
+            cond,
+            true,
+            rn,
+            rd,
+        ))
+    }
+
+    pub fn csinc<const DATASIZE: i32>(&mut self, rd: u8, rn: u8, rm: u8, cond: Condition) {
+        self.insn(Self::conditional_select(
+            datasize(DATASIZE),
+            false,
+            rm,
+            cond,
+            true,
+            rn,
+            rd,
+        ))
+    }
+
+    pub fn csinv<const DATASIZE: i32>(&mut self, rd: u8, rn: u8, rm: u8, cond: Condition) {
+        self.insn(Self::conditional_select(
+            datasize(DATASIZE),
+            true,
+            rm,
+            cond,
+            false,
+            rn,
+            rd,
+        ))
+    }
+
+    pub fn eon_shifted<const DATASIZE: i32>(
+        &mut self,
+        rd: u8,
+        rn: u8,
+        rm: u8,
+        shift: ShiftType,
+        amount: i32,
+    ) {
+        self.insn(Self::logical_shifted_register(
+            datasize(DATASIZE),
+            LogicalOp::EOR,
+            shift,
+            true,
+            rm,
+            amount,
+            rn,
+            rd,
+        ))
+    }
+
+    pub fn eon<const DATASIZE: i32>(&mut self, rd: u8, rn: u8, rm: u8) {
+        self.eon_shifted::<DATASIZE>(rd, rn, rm, ShiftType::LSL, 0)
+    }
+
+    pub fn eor_shifted<const DATASIZE: i32>(
+        &mut self,
+        rd: u8,
+        rn: u8,
+        rm: u8,
+        shift: ShiftType,
+        amount: i32,
+    ) {
+        self.insn(Self::logical_shifted_register(
+            datasize(DATASIZE),
+            LogicalOp::EOR,
+            shift,
+            false,
+            rm,
+            amount,
+            rn,
+            rd,
+        ))
+    }
+
+    pub fn eor_imm<const DATASIZE: i32>(&mut self, rd: u8, rn: u8, imm: LogicalImmediate) {
+        self.insn(Self::logical_immediate(
+            datasize(DATASIZE),
+            LogicalOp::EOR,
+            imm.value(),
+            rn,
+            rd,
+        ))
+    }
+
+    pub fn eor<const DATASIZE: i32>(&mut self, rd: u8, rn: u8, rm: u8) {
+        self.eor_shifted::<DATASIZE>(rd, rn, rm, ShiftType::LSL, 0)
+    }
+
+    pub fn extr<const DATASIZE: i32>(&mut self, rd: u8, rn: u8, rm: u8, lsb: i32) {
+        self.insn(Self::extract(datasize(DATASIZE), rm, lsb, rn, rd))
+    }
+
+    pub fn hlt(&mut self, imm16: u16) {
+        self.insn(Self::excepn_generation(ExcepnOp::HALT, imm16, 0))
+    }
+
+    pub fn illegal_instruction(&mut self) {
+        self.insn(0x0);
+    }
+
+    pub fn is_valid_ldp_imm<const DATASIZE: i32>(imm: i32) -> bool {
+        let immed_shift_amount = mem_pair_offset_shift(false, mem_pair_op_size(DATASIZE));
+        is_valid_signed_imm7(imm, immed_shift_amount as _)
+    }
+
+    pub fn is_valid_ldp_fp_imm<const DATASIZE: i32>(imm: i32) -> bool {
+        let immed_shift_amount = mem_pair_offset_shift(true, mem_pair_op_size_fp(DATASIZE));
+        is_valid_signed_imm7(imm, immed_shift_amount as _)
+    }
+
+    pub fn ldp_post<const DATASIZE: i32>(&mut self, rt: u8, rt2: u8, rn: u8, simm: PairPostIndex) {
+        self.insn(Self::load_store_register_pair_post_index_gp(
+            mem_pair_op_size(DATASIZE),
+            false,
+            MemOp::LOAD,
+            simm.0,
+            rn,
+            rt,
+            rt2,
+        ))
+    }
+
+    pub fn ldp_pre<const DATASIZE: i32>(&mut self, rt: u8, rt2: u8, rn: u8, simm: PairPreIndex) {
+        self.insn(Self::load_store_register_pair_pre_index_gp(
+            mem_pair_op_size(DATASIZE),
+            false,
+            MemOp::LOAD,
+            simm.0,
+            rn,
+            rt,
+            rt2,
+        ))
+    }
+
+    pub fn ldp_imm<const DATASIZE: i32>(&mut self, rt: u8, rt2: u8, rn: u8, imm: i32) {
+        self.insn(Self::load_store_register_pair_offset_gp(
+            mem_pair_op_size(DATASIZE),
+            false,
+            MemOp::LOAD,
+            imm,
+            rn,
+            rt,
+            rt2,
+        ))
+    }
+
+    pub fn ldnp(&mut self, rt: u8, rt2: u8, rn: u8, imm: i32) {
+        self.insn(Self::load_store_register_pair_non_temporal_gp(
+            mem_pair_op_size(64),
+            true,
+            MemOp::LOAD,
+            imm,
+            rn,
+            rt,
+            rt2,
+        ))
+    }
+
+    pub fn ldnp_fp<const DATASIZE: i32>(&mut self, rt: u8, rt2: u8, rn: u8, imm: i32) {
+        self.insn(Self::load_store_register_pair_non_temporal_gp(
+            mem_pair_op_size_fp(DATASIZE),
+            true,
+            MemOp::LOAD,
+            imm,
+            rn,
+            rt,
+            rt2,
+        ))
+    }
+
+    pub fn ldp_post_fp<const DATASIZE: i32>(
+        &mut self,
+        rt: u8,
+        rt2: u8,
+        rn: u8,
+        simm: PairPostIndex,
+    ) {
+        self.insn(Self::load_store_register_pair_post_index_gp(
+            mem_pair_op_size_fp(DATASIZE),
+            true,
+            MemOp::LOAD,
+            simm.0,
+            rn,
+            rt,
+            rt2,
+        ))
+    }
+
+    pub fn ldp_pre_fp<const DATASIZE: i32>(&mut self, rt: u8, rt2: u8, rn: u8, simm: PairPreIndex) {
+        self.insn(Self::load_store_register_pair_pre_index_gp(
+            mem_pair_op_size_fp(DATASIZE),
+            true,
+            MemOp::LOAD,
+            simm.0,
+            rn,
+            rt,
+            rt2,
+        ))
+    }
+
+    pub fn ldp_imm_fp<const DATASIZE: i32>(&mut self, rt: u8, rt2: u8, rn: u8, imm: i32) {
+        self.insn(Self::load_store_register_pair_offset_gp(
+            mem_pair_op_size_fp(DATASIZE),
+            true,
+            MemOp::LOAD,
+            imm,
+            rn,
+            rt,
+            rt2,
+        ))
+    }
+
+    pub fn ldr_extend<const DATASIZE: i32>(
+        &mut self,
+        rt: u8,
+        rn: u8,
+        rm: u8,
+        extendop: ExtendType,
+        amount: i32,
+    ) {
+        self.insn(Self::load_store_register_offset_gp(
+            memopsize(DATASIZE),
+            false,
+            MemOp::LOAD,
+            rm,
+            extendop,
+            encode_shift_amount::<DATASIZE>(amount) != 0,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn ldr<const DATASIZE: i32>(&mut self, rt: u8, rn: u8, rm: u8) {
+        self.ldr_extend::<DATASIZE>(rt, rn, rm, ExtendType::UXTX, 0)
+    }
+
+    pub fn ldr_imm<const DATASIZE: i32>(&mut self, rt: u8, rn: u8, imm: i32) {
+        self.insn(Self::load_store_register_unscaled_immediate_gp(
+            memopsize(DATASIZE),
+            false,
+            MemOp::LOAD,
+            imm,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn ldr_post<const DATASIZE: i32>(&mut self, rt: u8, rn: u8, simm: PostIndex) {
+        self.insn(Self::load_store_register_post_index_gp(
+            memopsize(DATASIZE),
+            false,
+            MemOp::LOAD,
+            simm.0,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn ldr_pre<const DATASIZE: i32>(&mut self, rt: u8, rn: u8, simm: PreIndex) {
+        self.insn(Self::load_store_register_pre_index_gp(
+            memopsize(DATASIZE),
+            false,
+            MemOp::LOAD,
+            simm.0,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn ldr_literal<const DATASIZE: i32>(&mut self, rt: u8, imm: i32) {
+        self.insn(Self::load_register_literal_gp(
+            if DATASIZE == 64 {
+                LdrLiteralOp::S64
+            } else {
+                LdrLiteralOp::S32
+            },
+            false,
+            imm,
+            rt,
+        ))
+    }
+
+    pub fn ldrb(&mut self, rt: u8, rn: u8, rm: u8) {
+        self.insn(Self::load_store_register_offset_gp(
+            MemOpSize::M8Or128,
+            false,
+            MemOp::LOAD,
+            rm,
+            ExtendType::UXTX,
+            false,
+            rn,
+            rt,
+        ));
+    }
+
+    pub fn ldrb_extend(&mut self, rt: u8, rn: u8, rm: u8, extendop: ExtendType, amount: i32) {
+        assert!(amount == 0);
+        self.insn(Self::load_store_register_offset_gp(
+            MemOpSize::M8Or128,
+            false,
+            MemOp::LOAD,
+            rm,
+            extendop,
+            true,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn ldrb_imm(&mut self, rt: u8, rn: u8, imm: i32) {
+        self.insn(Self::load_store_register_unsigned_immediate_gp(
+            MemOpSize::M8Or128,
+            false,
+            MemOp::LOAD,
+            imm,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn ldrb_post(&mut self, rt: u8, rn: u8, simm: PostIndex) {
+        self.insn(Self::load_store_register_post_index_gp(
+            MemOpSize::M8Or128,
+            false,
+            MemOp::LOAD,
+            simm.0,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn ldrb_pre(&mut self, rt: u8, rn: u8, simm: PreIndex) {
+        self.insn(Self::load_store_register_pre_index_gp(
+            MemOpSize::M8Or128,
+            false,
+            MemOp::LOAD,
+            simm.0,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn ldrh_extend(&mut self, rt: u8, rn: u8, rm: u8, extendop: ExtendType, amount: i32) {
+        self.insn(Self::load_store_register_offset_gp(
+            MemOpSize::M16,
+            false,
+            MemOp::LOAD,
+            rm,
+            extendop,
+            amount == 1,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn ldrh(&mut self, rt: u8, rn: u8, rm: u8) {
+        self.ldrh_extend(rt, rn, rm, ExtendType::UXTX, 0)
+    }
+
+    pub fn ldrh_imm(&mut self, rt: u8, rn: u8, imm: i32) {
+        self.insn(Self::load_store_register_unsigned_immediate_gp(
+            MemOpSize::M16,
+            false,
+            MemOp::LOAD,
+            imm,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn ldrh_post(&mut self, rt: u8, rn: u8, simm: PostIndex) {
+        self.insn(Self::load_store_register_post_index_gp(
+            MemOpSize::M16,
+            false,
+            MemOp::LOAD,
+            simm.0,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn ldrh_pre(&mut self, rt: u8, rn: u8, simm: PreIndex) {
+        self.insn(Self::load_store_register_pre_index_gp(
+            MemOpSize::M16,
+            false,
+            MemOp::LOAD,
+            simm.0,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn ldrsb<const DATASIZE: i32>(&mut self, rt: u8, rn: u8, rm: u8) {
+        self.insn(Self::load_store_register_offset_gp(
+            MemOpSize::M8Or128,
+            false,
+            if DATASIZE == 64 {
+                MemOp::LOADS64
+            } else {
+                MemOp::LOADS32
+            },
+            rm,
+            ExtendType::UXTX,
+            false,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn ldrsb_extend<const DATASIZE: i32>(
+        &mut self,
+        rt: u8,
+        rn: u8,
+        rm: u8,
+        extendop: ExtendType,
+        amount: i32,
+    ) {
+        assert!(amount == 0);
+        self.insn(Self::load_store_register_offset_gp(
+            MemOpSize::M8Or128,
+            false,
+            if DATASIZE == 64 {
+                MemOp::LOADS64
+            } else {
+                MemOp::LOADS32
+            },
+            rm,
+            extendop,
+            true,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn ldrsb_imm<const DATASIZE: i32>(&mut self, rt: u8, rn: u8, imm: i32) {
+        self.insn(Self::load_store_register_unsigned_immediate_gp(
+            MemOpSize::M8Or128,
+            false,
+            if DATASIZE == 64 {
+                MemOp::LOADS64
+            } else {
+                MemOp::LOADS32
+            },
+            imm,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn ldrsb_post<const DATASIZE: i32>(&mut self, rt: u8, rn: u8, simm: PostIndex) {
+        self.insn(Self::load_store_register_post_index_gp(
+            MemOpSize::M8Or128,
+            false,
+            if DATASIZE == 64 {
+                MemOp::LOADS64
+            } else {
+                MemOp::LOADS32
+            },
+            simm.0,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn ldrsb_pre<const DATASIZE: i32>(&mut self, rt: u8, rn: u8, simm: PreIndex) {
+        self.insn(Self::load_store_register_pre_index_gp(
+            MemOpSize::M8Or128,
+            false,
+            if DATASIZE == 64 {
+                MemOp::LOADS64
+            } else {
+                MemOp::LOADS32
+            },
+            simm.0,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn ldrsh<const DATASIZE: i32>(&mut self, rt: u8, rn: u8, rm: u8) {
+        self.insn(Self::load_store_register_offset_gp(
+            MemOpSize::M16,
+            false,
+            if DATASIZE == 64 {
+                MemOp::LOADS64
+            } else {
+                MemOp::LOADS32
+            },
+            rm,
+            ExtendType::UXTX,
+            false,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn ldrsh_extend<const DATASIZE: i32>(
+        &mut self,
+        rt: u8,
+        rn: u8,
+        rm: u8,
+        extendop: ExtendType,
+        amount: i32,
+    ) {
+        assert!(amount == 0 || amount == 1);
+        self.insn(Self::load_store_register_offset_gp(
+            MemOpSize::M16,
+            false,
+            if DATASIZE == 64 {
+                MemOp::LOADS64
+            } else {
+                MemOp::LOADS32
+            },
+            rm,
+            extendop,
+            amount == 1,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn ldrsh_imm<const DATASIZE: i32>(&mut self, rt: u8, rn: u8, imm: i32) {
+        self.insn(Self::load_store_register_unsigned_immediate_gp(
+            MemOpSize::M16,
+            false,
+            if DATASIZE == 64 {
+                MemOp::LOADS64
+            } else {
+                MemOp::LOADS32
+            },
+            imm,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn ldrsh_post<const DATASIZE: i32>(&mut self, rt: u8, rn: u8, simm: PostIndex) {
+        self.insn(Self::load_store_register_post_index_gp(
+            MemOpSize::M16,
+            false,
+            if DATASIZE == 64 {
+                MemOp::LOADS64
+            } else {
+                MemOp::LOADS32
+            },
+            simm.0,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn ldrsh_pre<const DATASIZE: i32>(&mut self, rt: u8, rn: u8, simm: PreIndex) {
+        self.insn(Self::load_store_register_pre_index_gp(
+            MemOpSize::M16,
+            false,
+            if DATASIZE == 64 {
+                MemOp::LOADS64
+            } else {
+                MemOp::LOADS32
+            },
+            simm.0,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn ldrsw_extend(&mut self, rt: u8, rn: u8, rm: u8, extendop: ExtendType, amount: i32) {
+        assert!(amount == 0 || amount == 2);
+        self.insn(Self::load_store_register_offset_gp(
+            MemOpSize::M32,
+            false,
+            MemOp::LOADS64,
+            rm,
+            extendop,
+            amount == 2,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn ldrsw(&mut self, rt: u8, rn: u8, rm: u8) {
+        self.ldrsw_extend(rt, rn, rm, ExtendType::UXTX, 0)
+    }
+
+    pub fn ldrsw_imm(&mut self, rt: u8, rn: u8, imm: i32) {
+        self.insn(Self::load_store_register_unsigned_immediate_gp(
+            MemOpSize::M32,
+            false,
+            MemOp::LOADS64,
+            imm,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn ldrsw_post(&mut self, rt: u8, rn: u8, simm: PostIndex) {
+        self.insn(Self::load_store_register_post_index_gp(
+            MemOpSize::M32,
+            false,
+            MemOp::LOADS64,
+            simm.0,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn ldrsw_pre(&mut self, rt: u8, rn: u8, simm: PreIndex) {
+        self.insn(Self::load_store_register_pre_index_gp(
+            MemOpSize::M32,
+            false,
+            MemOp::LOADS64,
+            simm.0,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn ldrsw_literal(&mut self, rt: u8, offset: i32) {
+        self.insn(Self::load_register_literal_gp(
+            LdrLiteralOp::LDRSW,
+            false,
+            offset >> 2,
+            rt,
+        ))
+    }
+
+    pub fn ldur<const DATASIZE: i32>(&mut self, rt: u8, rn: u8, simm: i32) {
+        self.insn(Self::load_store_register_unscaled_immediate_gp(
+            memopsize(DATASIZE),
+            false,
+            MemOp::LOAD,
+            simm,
+            rn,
+            rt,
+        ));
+    }
+
+    pub fn ldrub(&mut self, rt: u8, rn: u8, simm: i32) {
+        self.insn(Self::load_store_register_unscaled_immediate_gp(
+            MemOpSize::M8Or128,
+            false,
+            MemOp::LOAD,
+            simm,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn ldurh(&mut self, rt: u8, rn: u8, simm: i32) {
+        self.insn(Self::load_store_register_unscaled_immediate_gp(
+            MemOpSize::M16,
+            false,
+            MemOp::LOAD,
+            simm,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn ldursb<const DATASIZE: i32>(&mut self, rt: u8, rn: u8, simm: i32) {
+        self.insn(Self::load_store_register_unscaled_immediate_gp(
+            MemOpSize::M8Or128,
+            false,
+            if DATASIZE == 64 {
+                MemOp::LOADS64
+            } else {
+                MemOp::LOADS32
+            },
+            simm,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn ldursh<const DATASIZE: i32>(&mut self, rt: u8, rn: u8, simm: i32) {
+        self.insn(Self::load_store_register_unscaled_immediate_gp(
+            MemOpSize::M16,
+            false,
+            if DATASIZE == 64 {
+                MemOp::LOADS64
+            } else {
+                MemOp::LOADS32
+            },
+            simm,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn ldursw(&mut self, rt: u8, rn: u8, simm: i32) {
+        self.insn(Self::load_store_register_unscaled_immediate_gp(
+            MemOpSize::M32,
+            false,
+            MemOp::LOADS64,
+            simm,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn lsl_imm<const DATASIZE: i32>(&mut self, rd: u8, rn: u8, shift: i32) {
+        self.ubfm::<DATASIZE>(
+            rd,
+            rn,
+            (DATASIZE - shift) & (DATASIZE - 1),
+            DATASIZE - 1 - shift,
+        );
+    }
+
+    pub fn lslv<const DATASIZE: i32>(&mut self, rd: u8, rn: u8, rm: u8) {
+        self.insn(Self::data_processing_2_source(
+            datasize(DATASIZE),
+            rm,
+            DataOp2Source::LSLV,
+            rn,
+            rd,
+        ))
+    }
+
+    pub fn lsl<const DATASIZE: i32>(&mut self, rd: u8, rn: u8, rm: u8) {
+        self.lslv::<DATASIZE>(rd, rn, rm)
+    }
+
+    pub fn lsr_imm<const DATASIZE: i32>(&mut self, rd: u8, rn: u8, shift: i32) {
+        self.ubfm::<DATASIZE>(rd, rn, shift, DATASIZE - 1);
+    }
+
+    pub fn lsrv<const DATASIZE: i32>(&mut self, rd: u8, rn: u8, rm: u8) {
+        self.insn(Self::data_processing_2_source(
+            datasize(DATASIZE),
+            rm,
+            DataOp2Source::LSRV,
+            rn,
+            rd,
+        ))
+    }
+
+    pub fn madd<const DATASIZE: i32>(&mut self, rd: u8, rn: u8, rm: u8, ra: u8) {
+        self.insn(Self::data_processing_3_source(
+            datasize(DATASIZE),
+            DataOp3Source::MADD,
+            rm,
+            ra,
+            rn,
+            rd,
+        ))
+    }
+
+    pub fn lsr<const DATASIZE: i32>(&mut self, rd: u8, rn: u8, rm: u8) {
+        self.lsrv::<DATASIZE>(rd, rn, rm)
+    }
+
+    pub fn mneg<const DATASIZE: i32>(&mut self, rd: u8, rn: u8, rm: u8) {
+        self.msub::<DATASIZE>(rd, rn, rm, zr);
+    }
+
+    pub const fn simd_qbit(lane: SIMDLane) -> bool {
+        lane.element_byte_size() == 8
+    }
+
+    pub const fn encode_lane_and_index(lane: SIMDLane, lane_index: u32) -> i32 {
+        match lane.element_byte_size() {
+            1 => 0b00001 | (lane_index as i32) << 1,
+            2 => 0b00010 | (lane_index as i32) << 2,
+            4 => 0b00100 | (lane_index as i32) << 3,
+            8 => 0b01000 | (lane_index as i32) << 4,
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn ins_i2f(&mut self, vd: u8, rn: u8, lane: SIMDLane, lane_index: u32) {
+        self.insn(Self::simd_general(
+            false,
+            true,
+            Self::encode_lane_and_index(lane, lane_index),
+            0b0011,
+            rn as _,
+            vd as _,
+        ))
+    }
+
+    pub fn ins_ff(&mut self, vd: u8, vn: u8, lane: SIMDLane, lane_index: u32) {
+        let mut inst = 0b01101110000000000000010000000000;
+        inst |= Self::encode_lane_and_index(lane, lane_index);
+        inst |= 0 << 11;
+        inst |= (vn as i32) << 5;
+        inst |= vd as i32;
+
+        self.insn(inst);
+    }
+
+    pub fn umov(&mut self, rd: u8, vn: u8, lane: SIMDLane, lane_index: u32) {
+        self.insn(Self::simd_general(
+            false,
+            Self::simd_qbit(lane),
+            Self::encode_lane_and_index(lane, lane_index),
+            0b0111,
+            vn as _,
+            rd as _,
+        ))
+    }
+
+    pub fn smov(&mut self, rd: u8, vn: u8, lane: SIMDLane, lane_index: u32) {
+        self.insn(Self::simd_general(
+            false,
+            Self::simd_qbit(lane),
+            Self::encode_lane_and_index(lane, lane_index),
+            0b0101,
+            vn as _,
+            rd as _,
+        ))
+    }
+
+    pub fn dup_element(&mut self, vd: u8, vn: u8, lane: SIMDLane, lane_index: u32) {
+        self.insn(Self::simd_general(
+            false,
+            true,
+            Self::encode_lane_and_index(lane, lane_index),
+            0b0000,
+            vn as _,
+            vd as _,
+        ))
+    }
+
+    pub fn dup_general(&mut self, vd: u8, rn: u8, lane: SIMDLane) {
+        self.insn(Self::simd_general(
+            false,
+            true,
+            Self::encode_lane_and_index(lane, 0),
+            0b0001,
+            rn as _,
+            vd as _,
+        ))
+    }
+
+    pub fn fcmeq(&mut self, vd: u8, vn: u8, vm: u8, lane: SIMDLane) {
+        self.insn(Self::simd_floating_point_vector_compare(
+            false, false, false, lane, vd, vn, vm,
+        ))
+    }
+
+    pub fn fcmgt(&mut self, vd: u8, vn: u8, vm: u8, lane: SIMDLane) {
+        self.insn(Self::simd_floating_point_vector_compare(
+            true, true, false, lane, vd, vn, vm,
+        ))
+    }
+
+    pub fn fcmge(&mut self, vd: u8, vn: u8, vm: u8, lane: SIMDLane) {
+        self.insn(Self::simd_floating_point_vector_compare(
+            true, false, false, lane, vd, vn, vm,
+        ))
+    }
+
+    pub fn vector_not(&mut self, vd: u8, vn: u8) {
+        self.insn(0b01101110001000000101100000000000 | (vn as i32) << 5 | vd as i32);
+    }
+
+    pub fn cmeq(&mut self, vd: u8, vn: u8, vm: u8, lane: SIMDLane) {
+        self.insn(
+            0b01101110001000001000110000000000
+                | (size_for_integral_simd_op(lane) << 22)
+                | (vm as i32) << 16
+                | (vn as i32) << 5
+                | vd as i32,
+        );
+    }
+
+    pub fn cmeqz(&mut self, vd: u8, vn: u8, lane: SIMDLane) {
+        self.insn(
+            0b01001110001000001001100000000000
+                | (size_for_integral_simd_op(lane) << 22)
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn cmhi(&mut self, vd: u8, vn: u8, vm: u8, lane: SIMDLane) {
+        self.insn(
+            0b01101110001000000011010000000000
+                | (size_for_integral_simd_op(lane) << 22)
+                | (vm as i32) << 16
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn cmhs(&mut self, vd: u8, vn: u8, vm: u8, lane: SIMDLane) {
+        self.insn(
+            0b01101110001000000011110000000000
+                | (size_for_integral_simd_op(lane) << 22)
+                | (vm as i32) << 16
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn cmgt(&mut self, vd: u8, vn: u8, vm: u8, lane: SIMDLane) {
+        self.insn(
+            0b01001110001000000011010000000000
+                | (size_for_integral_simd_op(lane) << 22)
+                | (vm as i32) << 16
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn cmge(&mut self, vd: u8, vn: u8, vm: u8, lane: SIMDLane) {
+        self.insn(
+            0b01001110001000000011110000000000
+                | (size_for_integral_simd_op(lane) << 22)
+                | (vm as i32) << 16
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn vector_add(&mut self, vd: u8, vn: u8, vm: u8, lane: SIMDLane) {
+        self.insn(
+            0b01001110001000001000010000000000
+                | (size_for_integral_simd_op(lane) << 22)
+                | (vm as i32) << 16
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn urhadd(&mut self, vd: u8, vn: u8, vm: u8, lane: SIMDLane) {
+        self.insn(
+            0b01101110001000000001010000000000
+                | (size_for_integral_simd_op(lane) << 22)
+                | (vm as i32) << 16
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn addpv(&mut self, vd: u8, vn: u8, vm: u8, lane: SIMDLane) {
+        self.insn(
+            0b01001110001000001011110000000000
+                | (size_for_integral_simd_op(lane) << 22)
+                | (vm as i32) << 16
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn addv(&mut self, vd: u8, vn: u8, lane: SIMDLane) {
+        self.insn(
+            0b01001110001100011011100000000000
+                | (size_for_integral_simd_op(lane) << 22)
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn zip1(&mut self, vd: u8, vn: u8, vm: u8, lane: SIMDLane) {
+        self.insn(
+            0b01001110000000000011100000000000
+                | (size_for_integral_simd_op(lane) << 22)
+                | (vm as i32) << 16
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn uzip1(&mut self, vd: u8, vn: u8, vm: u8, lane: SIMDLane) {
+        self.insn(
+            0b01001110000000000001100000000000
+                | (size_for_integral_simd_op(lane) << 22)
+                | (vm as i32) << 16
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn ext(&mut self, vd: u8, vn: u8, vm: u8, first_lane: u8, _lane: SIMDLane) {
+        self.insn(
+            0b01101110000000000000000000000000
+                | (vm as i32) << 16
+                | (first_lane as i32) << 11
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn vector_sub(&mut self, vd: u8, vn: u8, vm: u8, lane: SIMDLane) {
+        self.insn(
+            0b01101110001000001000010000000000
+                | (size_for_integral_simd_op(lane) << 22)
+                | (vm as i32) << 16
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn vector_mul(&mut self, vd: u8, vn: u8, vm: u8, lane: SIMDLane) {
+        self.insn(
+            0b01001110001000001001110000000000
+                | (size_for_integral_simd_op(lane) << 22)
+                | (vm as i32) << 16
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn smullv(&mut self, vd: u8, vn: u8, vm: u8, input_lane: SIMDLane, q: bool, u: bool) {
+        self.insn(
+            0b00001110001000001100000000000000
+                | (q as i32) << 30
+                | (u as i32) << 29
+                | (size_for_integral_simd_op(input_lane) << 22)
+                | (vm as i32) << 16
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn smull2v(&mut self, vd: u8, vn: u8, vm: u8, input_lane: SIMDLane) {
+        self.smullv(vd, vn, vm, input_lane, true, false)
+    }
+
+    pub fn umullv(&mut self, vd: u8, vn: u8, vm: u8, input_lane: SIMDLane) {
+        self.smullv(vd, vn, vm, input_lane, false, true)
+    }
+
+    pub fn umull2v(&mut self, vd: u8, vn: u8, vm: u8, input_lane: SIMDLane) {
+        self.smullv(vd, vn, vm, input_lane, true, true)
+    }
+
+    pub fn sqrdmlahv(&mut self, vd: u8, vn: u8, vm: u8, lane: SIMDLane) {
+        self.insn(
+            0b01101110000000001000010000000000
+                | (size_for_integral_simd_op(lane) << 22)
+                | (vm as i32) << 16
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn sqrdmulhv(&mut self, vd: u8, vn: u8, vm: u8, lane: SIMDLane) {
+        self.insn(
+            0b01101110001000001011010000000000
+                | (size_for_integral_simd_op(lane) << 22)
+                | (vm as i32) << 16
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn vector_fadd(&mut self, vd: u8, vn: u8, vm: u8, lane: SIMDLane) {
+        self.insn(
+            0b01001110001000001101010000000000
+                | (size_for_floating_point_simd(lane) as i32) << 22
+                | (vm as i32) << 16
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn vector_fsub(&mut self, vd: u8, vn: u8, vm: u8, lane: SIMDLane) {
+        self.insn(
+            0b01001110101000001101010000000000
+                | (size_for_floating_point_simd(lane) as i32) << 22
+                | (vm as i32) << 16
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn vector_fmul(&mut self, vd: u8, vn: u8, vm: u8, lane: SIMDLane) {
+        self.insn(
+            0b01101110001000001101110000000000
+                | (size_for_floating_point_simd(lane) as i32) << 22
+                | (vm as i32) << 16
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn vector_fdiv(&mut self, vd: u8, vn: u8, vm: u8, lane: SIMDLane) {
+        self.insn(
+            0b01101110001000001111110000000000
+                | (size_for_floating_point_simd(lane) as i32) << 22
+                | (vm as i32) << 16
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn vector_fmla(&mut self, vd: u8, vn: u8, vm: u8, lane: SIMDLane) {
+        self.insn(
+            0b01001110001000001100110000000000
+                | (size_for_floating_point_simd(lane) as i32) << 22
+                | (vm as i32) << 16
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn vector_fmls(&mut self, vd: u8, vn: u8, vm: u8, lane: SIMDLane) {
+        self.insn(
+            0b01001110101000001100110000000000
+                | (size_for_floating_point_simd(lane) as i32) << 22
+                | (vm as i32) << 16
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub const fn encode_lane_and_index_to_hlm(lane: SIMDLane, lane_index: u32) -> u32 {
+        match lane.element_byte_size() {
+            4 => (((lane_index & 0b10) >> 1) << 11) | ((lane_index & 0b01) << 21),
+
+            8 => lane_index << 11,
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn vector_fmul_by_element(
+        &mut self,
+        vd: u8,
+        vn: u8,
+        vm: u8,
+        lane: SIMDLane,
+        lane_index: u32,
+    ) {
+        self.insn(
+            0b01001111100000001001000000000000
+                | (size_for_floating_point_simd(lane) as i32) << 22
+                | Self::encode_lane_and_index_to_hlm(lane, lane_index) as i32
+                | (vm as i32) << 16
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn umax(&mut self, vd: u8, vn: u8, vm: u8, lane: SIMDLane) {
+        self.insn(
+            0b01101110001000000110010000000000
+                | (size_for_integral_simd_op(lane) << 22)
+                | (vm as i32) << 16
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn umaxv<const DESTSIZE: i32>(&mut self, vd: u8, vn: u8) {
+        let q = 1;
+        let size = if DESTSIZE == 8 {
+            0
+        } else if DESTSIZE == 16 {
+            1
+        } else {
+            2
+        };
+
+        self.insn(
+            0b00101110001100001010100000000000
+                | (q << 30)
+                | (size << 22)
+                | (vn as i32) << 5
+                | vd as i32,
+        );
+    }
+
+    pub fn smax(&mut self, vd: u8, vn: u8, vm: u8, lane: SIMDLane) {
+        self.insn(
+            0b01001110001000000110010000000000
+                | (size_for_integral_simd_op(lane) << 22)
+                | (vm as i32) << 16
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn umin(&mut self, vd: u8, vn: u8, vm: u8, lane: SIMDLane) {
+        self.insn(
+            0b01101110001000000110110000000000
+                | (size_for_integral_simd_op(lane) << 22)
+                | (vm as i32) << 16
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn smin(&mut self, vd: u8, vn: u8, vm: u8, lane: SIMDLane) {
+        self.insn(
+            0b01001110001000000110110000000000
+                | (size_for_integral_simd_op(lane) << 22)
+                | (vm as i32) << 16
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn vector_fmax(&mut self, vd: u8, vn: u8, vm: u8, lane: SIMDLane) {
+        self.insn(
+            0b01001110001000001111010000000000
+                | (size_for_integral_simd_op(lane) as i32) << 22
+                | (vm as i32) << 16
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn vector_fmin(&mut self, vd: u8, vn: u8, vm: u8, lane: SIMDLane) {
+        self.insn(
+            0b01001110101000001111010000000000
+                | (size_for_floating_point_simd(lane) as i32) << 22
+                | (vm as i32) << 16
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn bsl(&mut self, vd: u8, vn: u8, vm: u8) {
+        self.insn(
+            0b01101110001000000001110000000000 | (vm as i32) << 16 | (vn as i32) << 5 | vd as i32,
+        )
+    }
+
+    pub fn vector_abs(&mut self, vd: u8, vn: u8, lane: SIMDLane) {
+        self.insn(
+            0b01001110001000001011100000000000
+                | (size_for_integral_simd_op(lane) as i32) << 22
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn vector_fabs(&mut self, vd: u8, vn: u8, lane: SIMDLane) {
+        self.insn(
+            0b01001110101000001111100000000000
+                | (size_for_floating_point_simd(lane) as i32) << 22
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn vector_neg(&mut self, vd: u8, vn: u8, lane: SIMDLane) {
+        self.insn(
+            0b01101110001000001011100000000000
+                | (size_for_floating_point_simd(lane) as i32) << 22
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn vector_fneg(&mut self, vd: u8, vn: u8, lane: SIMDLane) {
+        self.insn(
+            0b01101110101000001111100000000000
+                | (size_for_floating_point_simd(lane) as i32) << 22
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn vector_cnt(&mut self, vd: u8, vn: u8, lane: SIMDLane) {
+        self.insn(
+            0b01001110001000000101100000000000
+                | (size_for_integral_simd_op(lane) as i32) << 22
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn vector_fcvtps(&mut self, vd: u8, vn: u8, lane: SIMDLane) {
+        self.insn(
+            0b01001110101000011010100000000000
+                | (size_for_floating_point_simd(lane) as i32) << 22
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn vector_fcvtms(&mut self, vd: u8, vn: u8, lane: SIMDLane) {
+        self.insn(
+            0b01001110001000011011100000000000
+                | (size_for_floating_point_simd(lane) as i32) << 22
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn vector_frintz(&mut self, vd: u8, vn: u8, lane: SIMDLane) {
+        self.insn(
+            0b01001110101000011001100000000000
+                | (size_for_floating_point_simd(lane) as i32) << 22
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn vector_fcvtns(&mut self, vd: u8, vn: u8, lane: SIMDLane) {
+        self.insn(
+            0b01001110001000011010100000000000
+                | (size_for_floating_point_simd(lane) as i32) << 22
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn vector_fsqrt(&mut self, vd: u8, vn: u8, lane: SIMDLane) {
+        self.insn(
+            0b01101110101000011111100000000000
+                | (size_for_floating_point_simd(lane) as i32) << 22
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub const fn immh_for_extend(lane: SIMDLane) -> i32 {
+        match lane.element_byte_size() {
+            2 => 0b0001,
+            4 => 0b0010,
+            8 => 0b0100,
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn uxtl(&mut self, vd: u8, vn: u8, lane: SIMDLane) {
+        self.insn(
+            0b00101111000000001010010000000000
+                | (Self::immh_for_extend(lane) << 19)
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn uxtl2(&mut self, vd: u8, vn: u8, lane: SIMDLane) {
+        self.insn(
+            0b01101111000000001010010000000000
+                | (Self::immh_for_extend(lane) << 19)
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn sxtl(&mut self, vd: u8, vn: u8, lane: SIMDLane) {
+        self.insn(
+            0b00001111000000001010010000000000
+                | (Self::immh_for_extend(lane) << 19)
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn sxtl2(&mut self, vd: u8, vn: u8, lane: SIMDLane) {
+        self.insn(
+            0b01001111000000001010010000000000
+                | (Self::immh_for_extend(lane) << 19)
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    /// Convert lower two f32s into two f64s, so sz bit == 1
+    /// This represents the input lane, not the output.
+    /// The instruction encodes input element size as 16 << sz_bit
+    pub fn fcvtl(&mut self, vd: u8, vn: u8, lane: SIMDLane) {
+        assert_eq!(lane, SIMDLane::F32X4);
+        self.insn(0b00001110011000010111100000000000 | (vn as i32) << 5 | vd as i32)
+    }
+
+    pub fn fcvtn(&mut self, vd: u8, vn: u8, lane: SIMDLane) {
+        assert_eq!(lane, SIMDLane::F64X2);
+        self.insn(0b00001110011000010110100000000000 | (vn as i32) << 5 | vd as i32)
+    }
+
+    pub fn uqxtn(&mut self, vd: u8, vn: u8, input_lane: SIMDLane) {
+        let lane = input_lane.narrowed();
+        self.insn(
+            0b00101110001000010100100000000000
+                | size_for_integral_simd_op(lane) << 22
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn sqxtn(&mut self, vd: u8, vn: u8, input_lane: SIMDLane) {
+        let lane = input_lane.narrowed();
+        self.insn(
+            0b00001110001000010100100000000000
+                | size_for_integral_simd_op(lane) << 22
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn sqxtn2(&mut self, vd: u8, vn: u8, input_lane: SIMDLane) {
+        let lane = input_lane.narrowed();
+        self.insn(
+            0b01001110001000010100100000000000
+                | size_for_integral_simd_op(lane) << 22
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn sqxtun(&mut self, vd: u8, vn: u8, input_lane: SIMDLane) {
+        let lane = input_lane.narrowed();
+        self.insn(
+            0b00101110001000010010100000000000
+                | size_for_integral_simd_op(lane) << 22
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn sqxtun2(&mut self, vn: u8, vd: u8, input_lane: SIMDLane) {
+        let lane = input_lane.narrowed();
+        self.insn(
+            0b01101110001000010010100000000000
+                | size_for_integral_simd_op(lane) << 22
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn ushl(&mut self, vd: u8, vn: u8, vm: u8, lane: SIMDLane) {
+        self.insn(
+            0b01101110001000000100010000000000
+                | size_for_integral_simd_op(lane) << 22
+                | (vm as i32) << 16
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn sshl(&mut self, vd: u8, vn: u8, vm: u8, lane: SIMDLane) {
+        self.insn(
+            0b01001110001000000100010000000000
+                | size_for_integral_simd_op(lane) << 22
+                | (vm as i32) << 16
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn sshr_vi(&mut self, vd: u8, vn: u8, mut shift: u8, lane: SIMDLane) {
+        let max_shift = lane.element_byte_size() * 8;
+        assert!((shift as i32) < max_shift && shift < 64 && shift != 0);
+        shift = (max_shift - shift as i32) as u8;
+
+        let immh = lane.element_byte_size() as usize | ((shift & 0b0111000) >> 3) as usize;
+        let immb = shift as usize & 0b0111;
+
+        self.insn(
+            0b01001111000000000000010000000000
+                | (immh as i32) << 19
+                | (immb as i32) << 16
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn sqadd(&mut self, vd: u8, vn: u8, vm: u8, lane: SIMDLane) {
+        self.insn(
+            0b01001110001000000000110000000000
+                | size_for_integral_simd_op(lane) << 22
+                | (vm as i32) << 16
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn sqsub(&mut self, vd: u8, vn: u8, vm: u8, lane: SIMDLane) {
+        self.insn(
+            0b01001110001000000010110000000000
+                | size_for_integral_simd_op(lane) << 22
+                | (vm as i32) << 16
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn uqadd(&mut self, vd: u8, vn: u8, vm: u8, lane: SIMDLane) {
+        self.insn(
+            0b01101110001000000000110000000000
+                | size_for_integral_simd_op(lane) << 22
+                | (vm as i32) << 16
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn uqsub(&mut self, vd: u8, vn: u8, vm: u8, lane: SIMDLane) {
+        self.insn(
+            0b01101110001000000010110000000000
+                | size_for_integral_simd_op(lane) << 22
+                | (vm as i32) << 16
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn vector_fcvtzs(&mut self, vd: u8, vn: u8, lane: SIMDLane) {
+        self.insn(
+            0b01001110101000011011100000000000
+                | (size_for_floating_point_simd(lane) as i32) << 22
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn vector_fcvtzu(&mut self, vd: u8, vn: u8, lane: SIMDLane) {
+        self.insn(
+            0b01101110101000011011100000000000
+                | (size_for_floating_point_simd(lane) as i32) << 22
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn vector_frintp(&mut self, vd: u8, vn: u8, lane: SIMDLane) {
+        self.insn(
+            0b01001110101000011000100000000000
+                | (size_for_floating_point_simd(lane) as i32) << 22
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn vector_frintn(&mut self, vd: u8, vn: u8, lane: SIMDLane) {
+        self.insn(
+            0b01001110001000011000100000000000
+                | (size_for_floating_point_simd(lane) as i32) << 22
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn vector_frintm(&mut self, vd: u8, vn: u8, lane: SIMDLane) {
+        self.insn(
+            0b01001110001000011001100000000000
+                | (size_for_floating_point_simd(lane) as i32) << 22
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn vector_scvtf(&mut self, vd: u8, vn: u8, lane: SIMDLane) {
+        self.insn(
+            0b01001110001000011101100000000000
+                | (size_for_floating_point_simd(lane) as i32) << 22
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn vector_ucvtf(&mut self, vd: u8, vn: u8, lane: SIMDLane) {
+        self.insn(
+            0b01101110001000011101100000000000
+                | (size_for_floating_point_simd(lane) as i32) << 22
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn vector_saddlp(&mut self, vd: u8, vn: u8, lane: SIMDLane) {
+        self.insn(
+            0b01001110001000000010100000000000
+                | (size_for_integral_simd_op(lane) as i32) << 22
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn vector_uaddlp(&mut self, vd: u8, vn: u8, lane: SIMDLane) {
+        self.insn(
+            0b01101110001000000010100000000000
+                | (size_for_integral_simd_op(lane) as i32) << 22
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn tbl(&mut self, vd: u8, vn: u8, vm: u8) {
+        let len = 0;
+        let q = 1;
+
+        self.insn(
+            0b00001110000000000000000000000000
+                | q << 30
+                | (vm as i32) << 16
+                | len << 13
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn tbl2(&mut self, vd: u8, vn: u8, vn2: u8, vm: u8) {
+        assert_eq!(vn2, vn + 1);
+        let len = 1;
+        let q = 1;
+
+        self.insn(
+            0b00001110000000000000000000000000
+                | q << 30
+                | (vm as i32) << 16
+                | len << 13
+                | (vn as i32) << 5
+                | vd as i32,
+        )
+    }
+
+    pub fn ld1r<const DATASIZE: i32>(&mut self, vt: u8, rn: u8) {
+        let size_encoding: i32 = match DATASIZE {
+            8 => 0,
+            16 => 1,
+            32 => 2,
+            64 => 3,
+            _ => unreachable!(),
+        };
+
+        self.insn(
+            0b01001101010000001100000000000000
+                | (size_encoding << 10)
+                | (rn as i32) << 5
+                | (vt as i32),
+        )
+    }
+
+    pub fn ld1<const DATASIZE: i32>(&mut self, vt: u8, rn: u8, lane_index: i32) {
+        let opcode;
+        let q;
+        let s;
+        let size;
+
+        match DATASIZE {
+            8 => {
+                opcode = 0;
+                q = ((lane_index & 0b1000) == 0) as i32;
+                s = ((lane_index & 0b0100) == 0) as i32;
+                size = lane_index & 0b0011;
+            }
+
+            16 => {
+                opcode = 1;
+                q = ((lane_index & 0b100) == 0) as i32;
+                s = ((lane_index & 0b010) == 0) as i32;
+                size = (lane_index & 0b001) << 1;
+            }
+
+            32 => {
+                opcode = 2;
+                size = 0;
+                q = ((lane_index & 0b10) == 0) as i32;
+                s = (lane_index & 0b1) as i32;
+            }
+
+            64 => {
+                opcode = 2;
+                size = 1;
+                s = 0;
+                q = lane_index & 0b1;
+            }
+
+            _ => unreachable!(),
+        }
+
+        self.insn(
+            0b00001101010000000000000000000000
+                | q << 30
+                | opcode << 14
+                | s << 12
+                | size << 10
+                | (rn as i32) << 5
+                | (vt as i32),
+        )
+    }
+
+    pub fn st1<const DATASIZE: i32>(&mut self, vt: u8, rn: u8, lane_index: i32) {
+        let opcode;
+        let q;
+        let s;
+        let size;
+
+        match DATASIZE {
+            8 => {
+                opcode = 0;
+                q = ((lane_index & 0b1000) == 0) as i32;
+                s = ((lane_index & 0b0100) == 0) as i32;
+                size = lane_index & 0b0011;
+            }
+
+            16 => {
+                opcode = 1;
+                q = ((lane_index & 0b100) == 0) as i32;
+                s = ((lane_index & 0b010) == 0) as i32;
+                size = (lane_index & 0b001) << 1;
+            }
+
+            32 => {
+                opcode = 2;
+                size = 0;
+                q = ((lane_index & 0b10) == 0) as i32;
+                s = (lane_index & 0b1) as i32;
+            }
+
+            64 => {
+                opcode = 2;
+                size = 1;
+                s = 0;
+                q = lane_index & 0b1;
+            }
+
+            _ => unreachable!(),
+        }
+        self.insn(
+            0b00001101000000000000000000000000
+                | q << 30
+                | opcode << 14
+                | s << 12
+                | size << 10
+                | (rn as i32) << 5
+                | (vt as i32),
+        )
+    }
+
+    pub fn mov<const DATASIZE: i32>(&mut self, rd: u8, rm: u8) {
+        if is_sp(rd) || is_sp(rm) {
+            self.add_imm::<DATASIZE, false>(rd, rm, UInt12(0), 0);
+        } else {
+            self.orr::<DATASIZE>(rd, zr, rm);
+        }
+    }
+
+    pub fn movi<const DATASIZE: i32>(&mut self, rd: u8, imm: LogicalImmediate) {
+        self.orr_imm::<DATASIZE>(rd, zr, imm);
+    }
+
+    pub fn movi8<const DATASIZE: i32>(&mut self, rd: u8, imm: u8) {
+        self.insn(Self::simd_move_immediate(
+            DATASIZE == 128,
+            true,
+            0b1110,
+            imm as _,
+            rd,
+        ))
+    }
+
+    pub fn movk<const DATASIZE: i32>(&mut self, rd: u8, value: u16, shift: i32) {
+        self.insn(Self::move_wide_immediate(
+            datasize(DATASIZE),
+            MoveWideOp::K,
+            shift >> 4,
+            value,
+            rd,
+        ))
+    }
+
+    pub fn movn<const DATASIZE: i32>(&mut self, rd: u8, value: u16, shift: i32) {
+        self.insn(Self::move_wide_immediate(
+            datasize(DATASIZE),
+            MoveWideOp::N,
+            shift >> 4,
+            value,
+            rd,
+        ))
+    }
+
+    pub fn movz<const DATASIZE: i32>(&mut self, rd: u8, value: u16, shift: i32) {
+        self.insn(Self::move_wide_immediate(
+            datasize(DATASIZE),
+            MoveWideOp::Z,
+            shift >> 4,
+            value,
+            rd,
+        ))
+    }
+
+    pub fn msub<const DATASIZE: i32>(&mut self, rd: u8, rn: u8, rm: u8, ra: u8) {
+        self.insn(Self::data_processing_3_source(
+            datasize(DATASIZE),
+            DataOp3Source::MSUB,
+            rm,
+            ra,
+            rn,
+            rd,
+        ))
+    }
+
+    pub fn mul<const DATASIZE: i32>(&mut self, rd: u8, rn: u8, rm: u8) {
+        self.madd::<DATASIZE>(rd, rn, rm, zr)
+    }
+
+    pub fn mvn<const DATASIZE: i32>(&mut self, rd: u8, rm: u8) {
+        self.orn::<DATASIZE>(rd, zr, rm);
+    }
+
+    pub fn mvn_shifted<const DATASIZE: i32>(
+        &mut self,
+        rd: u8,
+        rm: u8,
+        shift: ShiftType,
+        amount: i32,
+    ) {
+        self.orn_shifted::<DATASIZE>(rd, zr, rm, shift, amount);
+    }
+
+    pub fn neg<const DATASIZE: i32, const S: bool>(&mut self, rd: u8, rm: u8) {
+        self.sub::<DATASIZE, S>(rd, zr, rm);
+    }
+
+    pub fn neg_shifted<const DATASIZE: i32, const S: bool>(
+        &mut self,
+        rd: u8,
+        rm: u8,
+        shift: ShiftType,
+        amount: i32,
+    ) {
+        self.sub_shifted::<DATASIZE, S>(rd, zr, rm, shift, amount);
+    }
+
+    pub fn ngc<const DATASIZE: i32, const S: bool>(&mut self, rd: u8, rm: u8) {
+        self.sbc::<DATASIZE, S>(rd, zr, rm);
+    }
+    /*
+    pub fn ngc_shifted<const DATASIZE: i32, const S: bool>(
+        &mut self,
+        rd: u8,
+        rm: u8,
+        shift: ShiftType,
+        amount: i32,
+    ) {
+        self.sbc_shifted::<DATASIZE, S>(rd, zr, rm, shift, amount);
+    }*/
+
+    pub fn nop(&mut self) {
+        self.insn(Self::nop_pseudo())
+    }
+
+    #[allow(unused_mut)]
+    pub unsafe fn fill_nops(base: *mut u8, mut size: usize) {
+        let mut n = size / size_of::<u32>();
+
+        let mut ptr = base.cast::<i32>();
+        while n != 0 {
+            n -= 1;
+
+            let insn = Self::nop_pseudo();
+            *ptr = insn;
+            ptr = ptr.add(1);
+        }
+    }
+
+    pub fn dmb_ish(&mut self) {
+        self.insn(0xd5033bbfu32 as i32);
+    }
+
+    pub fn dmb_ishst(&mut self) {
+        self.insn(0xd5033abfu32 as i32);
+    }
+
+    pub fn ldar<const DATASIZE: i32>(&mut self, dst: u8, src: u8) {
+        self.insn(Self::exotic_load(
+            memopsize(DATASIZE),
+            ExoticLoadFence::Acquire,
+            ExoticLoadAtomic::None,
+            dst,
+            src,
+        ))
+    }
+
+    pub fn ldxr<const DATASIZE: i32>(&mut self, dst: u8, src: u8) {
+        self.insn(Self::exotic_load(
+            memopsize(DATASIZE),
+            ExoticLoadFence::None,
+            ExoticLoadAtomic::Link,
+            dst,
+            src,
+        ))
+    }
+
+    pub fn ldaxr<const DATASIZE: i32>(&mut self, dst: u8, src: u8) {
+        self.insn(Self::exotic_load(
+            memopsize(DATASIZE),
+            ExoticLoadFence::Acquire,
+            ExoticLoadAtomic::Link,
+            dst,
+            src,
+        ))
+    }
+
+    pub fn stxr<const DATASIZE: i32>(&mut self, result: u8, src: u8, dst: u8) {
+        self.insn(Self::exotic_store(
+            memopsize(DATASIZE),
+            ExoticStoreFence::None,
+            result,
+            src,
+            dst,
+        ))
+    }
+
+    pub fn stlr<const DATASIZE: i32>(&mut self, src: u8, dst: u8) {
+        self.insn(Self::store_release(memopsize(DATASIZE), src, dst))
+    }
+
+    pub fn stlxr<const DATASIZE: i32>(&mut self, result: u8, src: u8, dst: u8) {
+        self.insn(Self::exotic_store(
+            memopsize(DATASIZE),
+            ExoticStoreFence::Release,
+            result,
+            src,
+            dst,
+        ))
+    }
+
+    pub fn mrs_tpidrro_el0(&mut self, dst: u8) {
+        self.insn(0xd53bd060u32 as i32 | dst as i32);
+    }
+
+    pub fn orn<const DATASIZE: i32>(&mut self, rd: u8, rn: u8, rm: u8) {
+        self.orn_shifted::<DATASIZE>(rd, rn, rm, ShiftType::LSL, 0);
+    }
+
+    pub fn orn_shifted<const DATASIZE: i32>(
+        &mut self,
+        rd: u8,
+        rn: u8,
+        rm: u8,
+        shift: ShiftType,
+        amount: i32,
+    ) {
+        self.insn(Self::logical_shifted_register(
+            datasize(DATASIZE),
+            LogicalOp::ORR,
+            shift,
+            true,
+            rm,
+            amount,
+            rn,
+            rd,
+        ))
+    }
+
+    pub fn orr<const DATASIZE: i32>(&mut self, rd: u8, rn: u8, rm: u8) {
+        self.orr_shifted::<DATASIZE>(rd, rn, rm, ShiftType::LSL, 0);
+    }
+
+    pub fn orr_shifted<const DATASIZE: i32>(
+        &mut self,
+        rd: u8,
+        rn: u8,
+        rm: u8,
+        shift: ShiftType,
+        amount: i32,
+    ) {
+        self.insn(Self::logical_shifted_register(
+            datasize(DATASIZE),
+            LogicalOp::ORR,
+            shift,
+            false,
+            rm,
+            amount,
+            rn,
+            rd,
+        ))
+    }
+
+    pub fn orr_imm<const DATASIZE: i32>(&mut self, rd: u8, rn: u8, imm: LogicalImmediate) {
+        self.insn(Self::logical_immediate(
+            datasize(DATASIZE),
+            LogicalOp::ORR,
+            imm.value(),
+            rn,
+            rd,
+        ))
+    }
+
+    pub fn rbit<const DATASIZE: i32>(&mut self, rd: u8, rn: u8) {
+        self.insn(Self::data_processing_1_source(
+            datasize(DATASIZE),
+            DataOp1Source::RBIT,
+            rn,
+            rd,
+        ))
+    }
+
+    pub fn ret(&mut self, rn: u8) {
+        self.insn(Self::unconditional_branch_register(BranchType::RET, rn))
+    }
+
+    pub fn rev<const DATASIZE: i32>(&mut self, rd: u8, rn: u8) {
+        if DATASIZE == 32 {
+            self.insn(Self::data_processing_1_source(
+                Datasize::D32,
+                DataOp1Source::REV32,
+                rn,
+                rd,
+            ))
+        } else {
+            self.insn(Self::data_processing_1_source(
+                Datasize::D64,
+                DataOp1Source::REV64,
+                rn,
+                rd,
+            ))
+        }
+    }
+
+    pub fn rev16<const DATASIZE: i32>(&mut self, rd: u8, rn: u8) {
+        self.insn(Self::data_processing_1_source(
+            datasize(DATASIZE),
+            DataOp1Source::REV16,
+            rn,
+            rd,
+        ))
+    }
+
+    pub fn rev32<const DATASIZE: i32>(&mut self, rd: u8, rn: u8) {
+        assert_eq!(DATASIZE, 64);
+        self.insn(Self::data_processing_1_source(
+            Datasize::D64,
+            DataOp1Source::REV32,
+            rn,
+            rd,
+        ))
+    }
+
+    pub fn ror<const DATASIZE: i32>(&mut self, rd: u8, rn: u8, rm: u8) {
+        self.rorv::<DATASIZE>(rd, rn, rm);
+    }
+
+    pub fn ror_imm<const DATASIZE: i32>(&mut self, rd: u8, rs: u8, shift: i32) {
+        self.extr::<DATASIZE>(rd, rs, rs, shift);
+    }
+
+    pub fn rorv<const DATASIZE: i32>(&mut self, rd: u8, rn: u8, rm: u8) {
+        self.insn(Self::data_processing_2_source(
+            datasize(DATASIZE),
+            rm,
+            DataOp2Source::RORV,
+            rn,
+            rd,
+        ))
+    }
+
+    pub fn sbc<const DATASIZE: i32, const S: bool>(&mut self, rd: u8, rn: u8, rm: u8) {
+        self.insn(Self::add_subtract_with_carry(
+            datasize(DATASIZE),
+            AddOp::SUB,
+            set_flags(S),
+            rm,
+            rn,
+            rd,
+        ))
+    }
+
+    pub fn sbfiz<const DATASIZE: i32>(&mut self, rd: u8, rn: u8, lsb: i32, width: i32) {
+        self.sbfm::<DATASIZE>(rd, rn, (DATASIZE - lsb) & (DATASIZE - 1), width - 1);
+    }
 
     pub fn sbfm<const DATASIZE: i32>(&mut self, rd: u8, rn: u8, immr: i32, imms: i32) {
         self.insn(Self::bitfield(
@@ -1394,8 +3614,554 @@ impl ARM64Assembler {
         ))
     }
 
-    pub fn ret(&mut self, rn: u8) {
-        self.insn(Self::unconditional_branch_register(BranchType::RET, rn))
+    pub fn sbfx<const DATASIZE: i32>(&mut self, rd: u8, rn: u8, lsb: i32, width: i32) {
+        self.sbfm::<DATASIZE>(rd, rn, lsb, lsb + width - 1);
+    }
+
+    pub fn sdiv<const DATASIZE: i32>(&mut self, rd: u8, rn: u8, rm: u8) {
+        self.insn(Self::data_processing_2_source(
+            datasize(DATASIZE),
+            rm,
+            DataOp2Source::SDIV,
+            rn,
+            rd,
+        ))
+    }
+
+    pub fn smaddl(&mut self, rd: u8, rn: u8, rm: u8, ra: u8) {
+        self.insn(Self::data_processing_3_source(
+            Datasize::D64,
+            DataOp3Source::SMADDL,
+            rm,
+            ra,
+            rn,
+            rd,
+        ))
+    }
+
+    pub fn smnegl(&mut self, rd: u8, rn: u8, rm: u8) {
+        self.smsubl(rd, rn, rm, zr);
+    }
+
+    pub fn smsubl(&mut self, rd: u8, rn: u8, rm: u8, ra: u8) {
+        self.insn(Self::data_processing_3_source(
+            Datasize::D64,
+            DataOp3Source::SMSUBL,
+            rm,
+            ra,
+            rn,
+            rd,
+        ))
+    }
+
+    pub fn smulh(&mut self, rd: u8, rn: u8, rm: u8) {
+        self.insn(Self::data_processing_3_source(
+            Datasize::D64,
+            DataOp3Source::SMULH,
+            rm,
+            zr,
+            rn,
+            rd,
+        ))
+    }
+
+    pub fn smull(&mut self, rd: u8, rn: u8, rm: u8) {
+        self.smaddl(rd, rn, rm, zr);
+    }
+
+    pub fn stp_pair_post<const DATASIZE: i32>(
+        &mut self,
+        rt: u8,
+        rt2: u8,
+        rn: u8,
+        simm: PairPostIndex,
+    ) {
+        self.insn(Self::load_store_register_pair_post_index_gp(
+            mem_pair_op_size(DATASIZE),
+            false,
+            MemOp::STORE,
+            simm.0,
+            rn,
+            rt,
+            rt2,
+        ))
+    }
+
+    pub fn stp_pair_pre<const DATASIZE: i32>(
+        &mut self,
+        rt: u8,
+        rt2: u8,
+        rn: u8,
+        simm: PairPreIndex,
+    ) {
+        self.insn(Self::load_store_register_pair_pre_index_gp(
+            mem_pair_op_size(DATASIZE),
+            true,
+            MemOp::STORE,
+            simm.0,
+            rn,
+            rt,
+            rt2,
+        ))
+    }
+
+    pub fn stp_pair_imm<const DATASIZE: i32>(&mut self, rt: u8, rt2: u8, rn: u8, simm: i32) {
+        self.insn(Self::load_store_register_pair_offset_gp(
+            mem_pair_op_size(DATASIZE),
+            false,
+            MemOp::STORE,
+            simm,
+            rn,
+            rt,
+            rt2,
+        ))
+    }
+
+    pub fn stnp_pair<const DATASIZE: i32>(&mut self, rt: u8, rt2: u8, rn: u8, simm: i32) {
+        self.insn(Self::load_store_register_pair_non_temporal_gp(
+            mem_pair_op_size(DATASIZE),
+            false,
+            MemOp::STORE,
+            simm,
+            rn,
+            rt,
+            rt2,
+        ))
+    }
+
+    pub fn stp_pair_post_fp<const DATASIZE: i32>(
+        &mut self,
+        rt: u8,
+        rt2: u8,
+        rn: u8,
+        simm: PairPostIndex,
+    ) {
+        self.insn(Self::load_store_register_pair_post_index(
+            mem_pair_op_size(DATASIZE),
+            false,
+            MemOp::STORE,
+            simm.0,
+            rn,
+            rt,
+            rt2,
+        ))
+    }
+
+    pub fn stp_pair_pre_fp<const DATASIZE: i32>(
+        &mut self,
+        rt: u8,
+        rt2: u8,
+        rn: u8,
+        simm: PairPreIndex,
+    ) {
+        self.insn(Self::load_store_register_pair_pre_index(
+            mem_pair_op_size(DATASIZE),
+            true,
+            MemOp::STORE,
+            simm.0,
+            rn,
+            rt,
+            rt2,
+        ))
+    }
+
+    pub fn stnp_pair_fp<const DATASIZE: i32>(&mut self, rt: u8, rt2: u8, rn: u8, simm: i32) {
+        self.insn(Self::load_store_register_pair_non_temporal(
+            mem_pair_op_size(DATASIZE),
+            false,
+            MemOp::STORE,
+            simm,
+            rn,
+            rt,
+            rt2,
+        ))
+    }
+
+    pub fn str<const DATASIZE: i32>(&mut self, rt: u8, rn: u8, rm: u8) {
+        self.str_extend::<DATASIZE>(rt, rn, rm, ExtendType::UXTX, 0);
+    }
+
+    pub fn str_extend<const DATASIZE: i32>(
+        &mut self,
+        rt: u8,
+        rn: u8,
+        rm: u8,
+        extend: ExtendType,
+        amount: i32,
+    ) {
+        self.insn(Self::load_store_register_offset_gp(
+            memopsize(DATASIZE),
+            false,
+            MemOp::STORE,
+            rm,
+            extend,
+            encode_shift_amount::<DATASIZE>(amount) != 0,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn str_imm<const DATASIZE: i32>(&mut self, rt: u8, rn: u8, pimm: i32) {
+        self.insn(Self::load_store_register_unsigned_immediate_gp(
+            memopsize(DATASIZE),
+            false,
+            MemOp::LOAD,
+            pimm,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn str_post<const DATASIZE: i32>(&mut self, rt: u8, rn: u8, simm: PostIndex) {
+        self.insn(Self::load_store_register_post_index_gp(
+            memopsize(DATASIZE),
+            false,
+            MemOp::STORE,
+            simm.0,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn str_pre<const DATASIZE: i32>(&mut self, rt: u8, rn: u8, simm: PreIndex) {
+        self.insn(Self::load_store_register_pre_index_gp(
+            memopsize(DATASIZE),
+            true,
+            MemOp::STORE,
+            simm.0,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn strb(&mut self, rt: u8, rn: u8, rm: u8) {
+        self.insn(Self::load_store_register_offset_gp(
+            MemOpSize::M8Or128,
+            false,
+            MemOp::STORE,
+            rm,
+            ExtendType::UXTX,
+            false,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn strb_extend(&mut self, rt: u8, rn: u8, rm: u8, extend: ExtendType, _amount: i32) {
+        self.insn(Self::load_store_register_offset_gp(
+            MemOpSize::M8Or128,
+            false,
+            MemOp::STORE,
+            rm,
+            extend,
+            true,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn strb_imm(&mut self, rt: u8, rn: u8, pimm: i32) {
+        self.insn(Self::load_store_register_unsigned_immediate_gp(
+            MemOpSize::M8Or128,
+            false,
+            MemOp::LOAD,
+            pimm,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn strb_post(&mut self, rt: u8, rn: u8, simm: PostIndex) {
+        self.insn(Self::load_store_register_post_index_gp(
+            MemOpSize::M8Or128,
+            false,
+            MemOp::STORE,
+            simm.0,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn strb_pre(&mut self, rt: u8, rn: u8, simm: PreIndex) {
+        self.insn(Self::load_store_register_pre_index_gp(
+            MemOpSize::M8Or128,
+            true,
+            MemOp::STORE,
+            simm.0,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn strh(&mut self, rt: u8, rn: u8, rm: u8) {
+        self.strh_extend(rt, rn, rm, ExtendType::UXTX, 0);
+    }
+
+    pub fn strh_extend(&mut self, rt: u8, rn: u8, rm: u8, extend: ExtendType, amount: i32) {
+        self.insn(Self::load_store_register_offset_gp(
+            MemOpSize::M16,
+            false,
+            MemOp::STORE,
+            rm,
+            extend,
+            amount == 1,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn strh_imm(&mut self, rt: u8, rn: u8, pimm: i32) {
+        self.insn(Self::load_store_register_unsigned_immediate_gp(
+            MemOpSize::M16,
+            false,
+            MemOp::LOAD,
+            pimm,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn strh_post(&mut self, rt: u8, rn: u8, simm: PostIndex) {
+        self.insn(Self::load_store_register_post_index_gp(
+            MemOpSize::M16,
+            false,
+            MemOp::STORE,
+            simm.0,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn strh_pre(&mut self, rt: u8, rn: u8, simm: PreIndex) {
+        self.insn(Self::load_store_register_pre_index_gp(
+            MemOpSize::M16,
+            true,
+            MemOp::STORE,
+            simm.0,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn stur<const DATASIZE: i32>(&mut self, rt: u8, rn: u8, simm: i32) {
+        self.insn(Self::load_store_register_unscaled_immediate_gp(
+            memopsize(DATASIZE),
+            false,
+            MemOp::LOAD,
+            simm,
+            rn,
+            rt,
+        ));
+    }
+
+    pub fn strub(&mut self, rt: u8, rn: u8, rm: u8) {
+        self.insn(Self::load_store_register_offset_gp(
+            MemOpSize::M8Or128,
+            false,
+            MemOp::STORE,
+            rm,
+            ExtendType::UXTW,
+            false,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn sturh(&mut self, rt: u8, rn: u8, simm: i32) {
+        self.insn(Self::load_store_register_unscaled_immediate_gp(
+            MemOpSize::M16,
+            false,
+            MemOp::LOAD,
+            simm,
+            rn,
+            rt,
+        ));
+    }
+
+    pub fn sub_imm<const DATASIZE: i32, const S: bool>(
+        &mut self,
+        rd: u8,
+        rn: u8,
+        imm12: UInt12,
+        shift: i32,
+    ) {
+        self.insn(Self::add_subtract_immediate(
+            datasize(DATASIZE),
+            AddOp::ADD,
+            set_flags(S),
+            (shift == 12) as i32,
+            imm12.0,
+            rn,
+            rd,
+        ))
+    }
+
+    pub fn sub_shifted<const DATASIZE: i32, const SET_FLAGS: bool>(
+        &mut self,
+        rd: u8,
+        rn: u8,
+        rm: u8,
+        shift: ShiftType,
+        amount: i32,
+    ) {
+        self.insn(Self::add_subtract_shifted_registers(
+            datasize(DATASIZE),
+            AddOp::SUB,
+            set_flags(SET_FLAGS),
+            shift,
+            rm,
+            amount,
+            rn,
+            rd,
+        ))
+    }
+
+    pub fn sub<const DATASIZE: i32, const SET_FLAGS: bool>(&mut self, rd: u8, rn: u8, rm: u8) {
+        if is_sp(rd) || is_sp(rn) {
+            self.sub_shifted::<DATASIZE, SET_FLAGS>(rd, rn, rm, ShiftType::LSL, 0)
+        } else {
+            self.sub_shifted::<DATASIZE, SET_FLAGS>(rd, rn, rm, ShiftType::LSL, 0)
+        }
+    }
+
+    pub fn sub_extend<const DATASIZE: i32, const SET_FLAGS: bool>(
+        &mut self,
+        rd: u8,
+        rn: u8,
+        rm: u8,
+        extend: ExtendType,
+        amount: i32,
+    ) {
+        self.insn(Self::add_subtract_extended_register(
+            datasize(DATASIZE),
+            AddOp::SUB,
+            set_flags(SET_FLAGS),
+            rm,
+            extend,
+            amount,
+            rn,
+            rd,
+        ))
+    }
+
+    pub fn sxtb<const DATASIZE: i32>(&mut self, rd: u8, rn: u8) {
+        self.sbfm::<DATASIZE>(rd, rn, 0, 7);
+    }
+
+    pub fn sxth<const DATASIZE: i32>(&mut self, rd: u8, rn: u8) {
+        self.sbfm::<DATASIZE>(rd, rn, 0, 15);
+    }
+
+    pub fn tbz(&mut self, rt: u8, imm: i32, mut offset: i32) {
+        offset >>= 2;
+
+        self.insn(Self::test_and_branch_immediate(false, imm, offset, rt))
+    }
+
+    pub fn tbnz(&mut self, rt: u8, imm: i32, mut offset: i32) {
+        offset >>= 2;
+
+        self.insn(Self::test_and_branch_immediate(true, imm, offset, rt))
+    }
+
+    pub fn tst<const DATASIZE: i32>(&mut self, rn: u8, rm: u8) {
+        self.and::<DATASIZE, true>(zr, rn, rm);
+    }
+
+    pub fn tst_shifted<const DATASIZE: i32>(
+        &mut self,
+        rn: u8,
+        rm: u8,
+        shift: ShiftType,
+        amount: i32,
+    ) {
+        self.and_shifted::<DATASIZE, true>(zr, rn, rm, shift, amount);
+    }
+
+    pub fn tst_imm<const DATASIZE: i32>(&mut self, rn: u8, imm: LogicalImmediate) {
+        self.and_imm::<DATASIZE, true>(zr, rn, imm);
+    }
+
+    pub fn ubfiz<const DATASIZE: i32>(&mut self, rd: u8, rn: u8, lsb: i32, width: i32) {
+        self.ubfm::<DATASIZE>(rd, rn, (DATASIZE - lsb) & (DATASIZE - 1), width - 1);
+    }
+
+    pub fn ubfm<const DATASIZE: i32>(&mut self, rd: u8, rn: u8, immr: i32, imms: i32) {
+        self.insn(Self::bitfield(
+            datasize(DATASIZE),
+            BitfieldOp::UBFM,
+            immr,
+            imms,
+            rn,
+            rd,
+        ))
+    }
+
+    pub fn ubfx<const DATASIZE: i32>(&mut self, rd: u8, rn: u8, lsb: i32, width: i32) {
+        self.ubfm::<DATASIZE>(rd, rn, lsb, lsb + width - 1);
+    }
+
+    pub fn udiv<const DATASIZE: i32>(&mut self, rd: u8, rn: u8, rm: u8) {
+        self.insn(Self::data_processing_2_source(
+            datasize(DATASIZE),
+            rm,
+            DataOp2Source::UDIV,
+            rn,
+            rd,
+        ))
+    }
+
+    pub fn umnegl(&mut self, rd: u8, rn: u8, rm: u8) {
+        self.umsubl(rd, rn, rm, zr);
+    }
+
+    pub fn umsubl(&mut self, rd: u8, rn: u8, rm: u8, ra: u8) {
+        self.insn(Self::data_processing_3_source(
+            datasize(64),
+            DataOp3Source::UMSUBL,
+            rm,
+            ra,
+            rn,
+            rd,
+        ))
+    }
+
+    pub fn umaddl(&mut self, rd: u8, rn: u8, rm: u8, ra: u8) {
+        self.insn(Self::data_processing_3_source(
+            datasize(64),
+            DataOp3Source::UMADDL,
+            rm,
+            ra,
+            rn,
+            rd,
+        ))
+    }
+
+    pub fn umulh(&mut self, rd: u8, rn: u8, rm: u8, ra: u8) {
+        self.insn(Self::data_processing_3_source(
+            datasize(64),
+            DataOp3Source::UMULH,
+            rm,
+            ra,
+            rn,
+            rd,
+        ))
+    }
+
+    pub fn umulh_rr(&mut self, rd: u8, rn: u8, rm: u8) {
+        self.umulh(rd, rn, rm, zr);
+    }
+
+    pub fn uxtb<const DATASIZE: i32>(&mut self, rd: u8, rn: u8) {
+        self.ubfm::<DATASIZE>(rd, rn, 0, 7);
+    }
+
+    pub fn uxth<const DATASIZE: i32>(&mut self, rd: u8, rn: u8) {
+        self.ubfm::<DATASIZE>(rd, rn, 0, 15);
+    }
+
+    pub fn uxtw(&mut self, rd: u8, rn: u8) {
+        self.ubfm::<64>(rd, rn, 0, 31);
     }
 
     const fn x_or_sp(r: u8) -> i32 {
@@ -1942,7 +4708,7 @@ impl ARM64Assembler {
     }
 
     const fn load_store_register_pair_pre_index(
-        size: MemOpSize,
+        size: MemPairOpSize,
         v: bool,
         opc: MemOp,
         imm9: i32,
@@ -1950,17 +4716,20 @@ impl ARM64Assembler {
         rt: u8,
         rt2: u8,
     ) -> i32 {
-        0x38000c00
+        let immed_shift_amount = mem_pair_offset_shift(v, size);
+        let imm7 = imm9 >> immed_shift_amount;
+        0x29800000
             | (size as i32) << 30
             | (v as i32) << 26
             | (opc as i32) << 22
-            | (imm9 & 0x1ff) << 12
+            | (imm7 & 0x7f) << 15
+            | (rt2 as i32) << 10
             | Self::x_or_sp(rn) << 5
             | (rt as i32)
     }
 
     const fn load_store_register_pair_pre_index_gp(
-        size: MemOpSize,
+        size: MemPairOpSize,
         v: bool,
         opc: MemOp,
         imm9: i32,
@@ -1977,6 +4746,34 @@ impl ARM64Assembler {
             Self::x_or_zr(rt) as _,
             Self::x_or_zr(rt2) as _,
         )
+    }
+
+    const fn load_store_register_pre_index(
+        size: MemOpSize,
+        v: bool,
+        opc: MemOp,
+        imm9: i32,
+        rn: u8,
+        rt: u8,
+    ) -> i32 {
+        0x38000c00
+            | (size as i32) << 30
+            | (v as i32) << 26
+            | (opc as i32) << 22
+            | (imm9 & 0x1ff) << 12
+            | Self::x_or_sp(rn) << 5
+            | (rt as i32)
+    }
+
+    const fn load_store_register_pre_index_gp(
+        size: MemOpSize,
+        v: bool,
+        opc: MemOp,
+        imm9: i32,
+        rn: u8,
+        rt: u8,
+    ) -> i32 {
+        Self::load_store_register_pre_index(size, v, opc, imm9, rn, Self::x_or_zr(rt) as _)
     }
 
     const fn load_store_register_pair_offset(
@@ -2132,6 +4929,34 @@ impl ARM64Assembler {
         rd: u8,
     ) -> i32 {
         Self::load_store_register_unscaled_immediate(size, v, opc, imm9, rn, Self::x_or_zr(rd) as _)
+    }
+
+    const fn load_store_register_unsigned_immediate(
+        size: MemOpSize,
+        v: bool,
+        opc: MemOp,
+        imm12: i32,
+        rn: u8,
+        rd: u8,
+    ) -> i32 {
+        0x39000000
+            | (size as i32) << 30
+            | (v as i32) << 26
+            | (opc as i32) << 22
+            | (imm12 & 0xfff) << 10
+            | Self::x_or_sp(rn) << 5
+            | (rd as i32)
+    }
+
+    const fn load_store_register_unsigned_immediate_gp(
+        size: MemOpSize,
+        v: bool,
+        opc: MemOp,
+        imm9: i32,
+        rn: u8,
+        rd: u8,
+    ) -> i32 {
+        Self::load_store_register_unsigned_immediate(size, v, opc, imm9, rn, Self::x_or_zr(rd) as _)
     }
 
     const fn logical_immediate(

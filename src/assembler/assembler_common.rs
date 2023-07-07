@@ -270,4 +270,50 @@ impl SIMDLane {
             Self::F64X2 => 8,
         }
     }
+
+    pub const fn narrowed(self) -> Self {
+        match self {
+            Self::I16X8 => Self::I8X16,
+            Self::I32X4 => Self::I16X8,
+            Self::I64X2 => Self::I32X4,
+            Self::F64X2 => Self::F32X4,
+            _ => unreachable!()
+        }
+    }
+
+    pub fn promoted(self) -> Self {
+        match self {
+            Self::I8X16 => Self::I16X8,
+            Self::I16X8 => Self::I32X4,
+            Self::I32X4 => Self::I64X2,
+            Self::F32X4 => Self::F64X2,
+            _ => unreachable!()
+        }
+    }
+
+    pub fn scalar_type_is_integral(self) -> bool {
+        match self {
+            Self::I8X16 | Self::I16X8 | Self::I32X4 | Self::I64X2 => true,
+            _ => false,
+        }
+    }
+
+    pub fn scalar_type_is_floating_point(self) -> bool {
+        match self {
+            Self::F32X4 | Self::F64X2 => true,
+            _ => false,
+        }
+    }
+
+    pub fn element_count(self) -> usize {
+        match self {
+            Self::V128 => unreachable!(),
+            Self::I8X16 => 16,
+            Self::I16X8 => 8,
+            Self::I32X4 => 4,
+            Self::I64X2 => 2,
+            Self::F32X4 => 4,
+            Self::F64X2 => 2,
+        }
+    }
 }
