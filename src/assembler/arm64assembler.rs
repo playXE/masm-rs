@@ -1,7 +1,7 @@
 #![allow(non_upper_case_globals, unused_mut, unused_variables)]
 use crate::assembler::assembler_common::{is_int, is_int9, is_uint12};
 use std::{
-    mem::size_of,
+    mem::{size_of, transmute},
     ops::{Deref, DerefMut},
 };
 
@@ -383,6 +383,16 @@ const fn jump_size(jump: u8) -> usize {
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 #[repr(u8)]
+enum ExoticAtomicLoadStore {
+    Add = 0b0_000_00,
+    Clear = 0b0_001_00,
+    Xor = 0b0_010_00,
+    Set = 0b0_011_00,
+    Swap = 0b1_000_00,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+#[repr(u8)]
 pub enum JumpType {
     Fixed = jump_with_size(0, 0),
     NoCondition = jump_with_size(1, 1),
@@ -575,6 +585,14 @@ const fn datasize(x: i32) -> Datasize {
         Datasize::D128
     } else {
         Datasize::D32
+    }
+}
+
+const fn datasize_of(size: i32) -> Datasize {
+    match size {
+        64 => Datasize::D64,
+        128 => Datasize::D128,
+        _ => Datasize::D32,
     }
 }
 
@@ -1033,7 +1051,7 @@ impl ARM64Assembler {
         let mut result = self.buffer.label();
 
         if result.offset() != self.index_of_tail_of_last_watchpoint as u32 {
-            result = self.buffer.label();
+            result = self.label();
         }
 
         self.index_of_last_watchpoint = result.offset() as _;
@@ -1047,11 +1065,22 @@ impl ARM64Assembler {
     }
 
     pub fn label(&mut self) -> AssemblerLabel {
-        self.buffer.label()
+        let mut result = self.buffer.label();
+
+        while result.offset < self.index_of_tail_of_last_watchpoint as u32 {
+            self.nop();
+            result = self.buffer.label();
+        }
+
+        result
     }
 
     pub fn align(&mut self, alignment: usize) -> AssemblerLabel {
-        self.buffer.label()
+        while !self.buffer.is_aligned(alignment) {
+            self.brk(0);
+        }
+
+        self.label()
     }
 
     pub fn breakpoint(&mut self) {
@@ -4164,6 +4193,810 @@ impl ARM64Assembler {
         self.ubfm::<64>(rd, rn, 0, 31);
     }
 
+    pub fn fabs<const DATASIZE: i32>(&mut self, vd: u8, vn: u8) {
+        self.insn(Self::floating_point_data_processing_1_source(
+            datasize(DATASIZE),
+            FPDataOp1Source::FABS,
+            vn,
+            vd,
+        ));
+    }
+
+    pub fn fadd<const DATASIZE: i32>(&mut self, vd: u8, vn: u8, vm: u8) {
+        self.insn(Self::floating_point_data_processing_2_source(
+            datasize(DATASIZE),
+            FPDataOp2Source::FADD,
+            vm,
+            vn,
+            vd,
+        ));
+    }
+
+    pub fn fccmp<const DATASIZE: i32>(&mut self, vn: u8, vm: u8, _nzcv: i32, cond: Condition) {
+        self.insn(Self::floating_point_conditional_compare(
+            datasize(DATASIZE),
+            vm,
+            cond,
+            vn,
+            FPCondCmpOp::FCMP,
+            _nzcv,
+        ));
+    }
+
+    pub fn fccmpe<const DATASIZE: i32>(&mut self, vn: u8, vm: u8, _nzcv: i32, cond: Condition) {
+        self.insn(Self::floating_point_conditional_compare(
+            datasize(DATASIZE),
+            vm,
+            cond,
+            vn,
+            FPCondCmpOp::FCMPE,
+            _nzcv,
+        ));
+    }
+
+    pub fn fcmp<const DATASIZE: i32>(&mut self, vn: u8, vm: u8) {
+        self.insn(Self::floating_point_compare(
+            datasize(DATASIZE),
+            vm,
+            vn,
+            FPCmpOp::FCMP,
+        ));
+    }
+
+    pub fn fcmp_0<const DATASIZE: i32>(&mut self, vn: u8) {
+        self.insn(Self::floating_point_compare(
+            datasize(DATASIZE),
+            0,
+            vn,
+            FPCmpOp::FCMP,
+        ));
+    }
+
+    pub fn fcmpe<const DATASIZE: i32>(&mut self, vn: u8, vm: u8) {
+        self.insn(Self::floating_point_compare(
+            datasize(DATASIZE),
+            vm,
+            vn,
+            FPCmpOp::FCMPE,
+        ));
+    }
+
+    pub fn fcmpe_0<const DATASIZE: i32>(&mut self, vn: u8) {
+        self.insn(Self::floating_point_compare(
+            datasize(DATASIZE),
+            0,
+            vn,
+            FPCmpOp::FCMPE,
+        ));
+    }
+
+    pub fn fcsel<const DATASIZE: i32>(&mut self, vd: u8, vn: u8, vm: u8, cond: Condition) {
+        self.insn(Self::floating_point_conditional_select(
+            datasize(DATASIZE),
+            vm,
+            cond,
+            vn,
+            vd,
+        ));
+    }
+
+    pub fn fcvt<const DSTSIZE: i32, const SRCSIZE: i32>(&mut self, vd: u8, vn: u8) {
+        let ty = if SRCSIZE == 64 {
+            Datasize::D64
+        } else if SRCSIZE == 32 {
+            Datasize::D32
+        } else {
+            Datasize::D16
+        };
+
+        let opcode = if DSTSIZE == 64 {
+            FPDataOp1Source::FCVTToDouble
+        } else if DSTSIZE == 32 {
+            FPDataOp1Source::FCVTToSingle
+        } else {
+            FPDataOp1Source::FCVTToHalf
+        };
+
+        self.insn(Self::floating_point_data_processing_1_source(
+            ty, opcode, vn, vd,
+        ));
+    }
+
+    pub fn fcvtas<const DSTSIZE: i32, const SRCSIZE: i32>(&mut self, rd: u8, vn: u8) {
+        self.insn(Self::floating_point_integer_conversion_f2i(
+            datasize(DSTSIZE),
+            datasize(SRCSIZE),
+            FPIntConvOp::FCVTAS,
+            vn,
+            rd,
+        ));
+    }
+
+    pub fn fcvtau<const DSTSIZE: i32, const SRCSIZE: i32>(&mut self, rd: u8, vn: u8) {
+        self.insn(Self::floating_point_integer_conversion_f2i(
+            datasize(DSTSIZE),
+            datasize(SRCSIZE),
+            FPIntConvOp::FCVTAU,
+            vn,
+            rd,
+        ));
+    }
+
+    pub fn fcvtms<const DSTSIZE: i32, const SRCSIZE: i32>(&mut self, rd: u8, vn: u8) {
+        self.insn(Self::floating_point_integer_conversion_f2i(
+            datasize(DSTSIZE),
+            datasize(SRCSIZE),
+            FPIntConvOp::FCVTMS,
+            vn,
+            rd,
+        ));
+    }
+
+    pub fn fcvtmu<const DSTSIZE: i32, const SRCSIZE: i32>(&mut self, rd: u8, vn: u8) {
+        self.insn(Self::floating_point_integer_conversion_f2i(
+            datasize(DSTSIZE),
+            datasize(SRCSIZE),
+            FPIntConvOp::FCVTMU,
+            vn,
+            rd,
+        ));
+    }
+
+    pub fn fcvtns<const DSTSIZE: i32, const SRCSIZE: i32>(&mut self, rd: u8, vn: u8) {
+        self.insn(Self::floating_point_integer_conversion_f2i(
+            datasize(DSTSIZE),
+            datasize(SRCSIZE),
+            FPIntConvOp::FCVTNS,
+            vn,
+            rd,
+        ));
+    }
+
+    pub fn fcvtnu<const DSTSIZE: i32, const SRCSIZE: i32>(&mut self, rd: u8, vn: u8) {
+        self.insn(Self::floating_point_integer_conversion_f2i(
+            datasize(DSTSIZE),
+            datasize(SRCSIZE),
+            FPIntConvOp::FCVTNU,
+            vn,
+            rd,
+        ));
+    }
+
+    pub fn fcvtps<const DSTSIZE: i32, const SRCSIZE: i32>(&mut self, rd: u8, vn: u8) {
+        self.insn(Self::floating_point_integer_conversion_f2i(
+            datasize(DSTSIZE),
+            datasize(SRCSIZE),
+            FPIntConvOp::FCVTPS,
+            vn,
+            rd,
+        ));
+    }
+
+    pub fn fcvtpu<const DSTSIZE: i32, const SRCSIZE: i32>(&mut self, rd: u8, vn: u8) {
+        self.insn(Self::floating_point_integer_conversion_f2i(
+            datasize(DSTSIZE),
+            datasize(SRCSIZE),
+            FPIntConvOp::FCVTPU,
+            vn,
+            rd,
+        ));
+    }
+
+    pub fn fcvtzs<const DSTSIZE: i32, const SRCSIZE: i32>(&mut self, rd: u8, vn: u8) {
+        self.insn(Self::floating_point_integer_conversion_f2i(
+            datasize(DSTSIZE),
+            datasize(SRCSIZE),
+            FPIntConvOp::FCVTZS,
+            vn,
+            rd,
+        ));
+    }
+
+    pub fn fdiv<const DATASIZE: i32>(&mut self, vd: u8, vn: u8, vm: u8) {
+        self.insn(Self::floating_point_data_processing_2_source(
+            datasize(DATASIZE),
+            FPDataOp2Source::FDIV,
+            vm,
+            vn,
+            vd,
+        ));
+    }
+
+    pub fn fmadd<const DATASIZE: i32>(&mut self, vd: u8, vn: u8, vm: u8, va: u8) {
+        self.insn(Self::floating_point_data_processing_3_source(
+            datasize(DATASIZE),
+            false,
+            vm,
+            AddOp::ADD,
+            va,
+            vn,
+            vd,
+        ));
+    }
+
+    pub fn fmax<const DATASIZE: i32>(&mut self, vd: u8, vn: u8, vm: u8) {
+        self.insn(Self::floating_point_data_processing_2_source(
+            datasize(DATASIZE),
+            FPDataOp2Source::FMAX,
+            vm,
+            vn,
+            vd,
+        ));
+    }
+
+    pub fn fmaxnm<const DATASIZE: i32>(&mut self, vd: u8, vn: u8, vm: u8) {
+        self.insn(Self::floating_point_data_processing_2_source(
+            datasize(DATASIZE),
+            FPDataOp2Source::FMAXNM,
+            vm,
+            vn,
+            vd,
+        ));
+    }
+
+    pub fn fmin<const DATASIZE: i32>(&mut self, vd: u8, vn: u8, vm: u8) {
+        self.insn(Self::floating_point_data_processing_2_source(
+            datasize(DATASIZE),
+            FPDataOp2Source::FMIN,
+            vm,
+            vn,
+            vd,
+        ));
+    }
+
+    pub fn fminnm<const DATASIZE: i32>(&mut self, vd: u8, vn: u8, vm: u8) {
+        self.insn(Self::floating_point_data_processing_2_source(
+            datasize(DATASIZE),
+            FPDataOp2Source::FMINNM,
+            vm,
+            vn,
+            vd,
+        ));
+    }
+
+    pub fn fmov<const DATASIZE: i32>(&mut self, vd: u8, vn: u8) {
+        self.insn(Self::floating_point_data_processing_1_source(
+            datasize(DATASIZE),
+            FPDataOp1Source::FMOV,
+            vn,
+            vd,
+        ));
+    }
+
+    pub fn fmov_i2f<const DATASIZE: i32, const SRCSIZE: i32>(&mut self, rd: u8, vn: u8) {
+        self.insn(Self::floating_point_integer_conversion_i2f(
+            datasize(DATASIZE),
+            datasize(SRCSIZE),
+            FPIntConvOp::FMOVX2Q,
+            vn,
+            rd,
+        ));
+    }
+
+    pub fn fmov_f2i<const DSTSIZE: i32, const SRCSIZE: i32>(&mut self, rd: u8, vn: u8) {
+        self.insn(Self::floating_point_integer_conversion_f2i(
+            datasize(DSTSIZE),
+            datasize(SRCSIZE),
+            FPIntConvOp::FMOVQ2X,
+            vn,
+            rd,
+        ));
+    }
+
+    pub fn fmov_top_i2f(&mut self, rd: u8, vn: u8) {
+        self.insn(Self::floating_point_integer_conversion_i2f(
+            Datasize::D64,
+            Datasize::D64,
+            FPIntConvOp::FMOVX2QTOP,
+            vn,
+            rd,
+        ));
+    }
+
+    pub fn fmov_top_f2i(&mut self, rd: u8, vn: u8) {
+        self.insn(Self::floating_point_integer_conversion_f2i(
+            Datasize::D64,
+            Datasize::D64,
+            FPIntConvOp::FMOVQ2XTOP,
+            vn,
+            rd,
+        ));
+    }
+
+    pub fn fmsub<const DATASIZE: i32>(&mut self, vd: u8, vn: u8, vm: u8, va: u8) {
+        self.insn(Self::floating_point_data_processing_3_source(
+            datasize(DATASIZE),
+            false,
+            vm,
+            AddOp::ADD,
+            va,
+            vn,
+            vd,
+        ));
+    }
+
+    pub fn fmul<const DATASIZE: i32>(&mut self, vd: u8, vn: u8, vm: u8) {
+        self.insn(Self::floating_point_data_processing_2_source(
+            datasize(DATASIZE),
+            FPDataOp2Source::FMUL,
+            vm,
+            vn,
+            vd,
+        ));
+    }
+
+    pub fn fneg<const DATASIZE: i32>(&mut self, vd: u8, vn: u8) {
+        self.insn(Self::floating_point_data_processing_1_source(
+            datasize(DATASIZE),
+            FPDataOp1Source::FNEG,
+            vn,
+            vd,
+        ));
+    }
+
+    pub fn fnmadd<const DATASIZE: i32>(&mut self, vd: u8, vn: u8, vm: u8, va: u8) {
+        self.insn(Self::floating_point_data_processing_3_source(
+            datasize(DATASIZE),
+            true,
+            vm,
+            AddOp::ADD,
+            va,
+            vn,
+            vd,
+        ));
+    }
+
+    pub fn fnmsub<const DATASIZE: i32>(&mut self, vd: u8, vn: u8, vm: u8, va: u8) {
+        self.insn(Self::floating_point_data_processing_3_source(
+            datasize(DATASIZE),
+            true,
+            vm,
+            AddOp::SUB,
+            va,
+            vn,
+            vd,
+        ));
+    }
+
+    pub fn fnmmul<const DATASIZE: i32>(&mut self, vd: u8, vn: u8, vm: u8) {
+        self.insn(Self::floating_point_data_processing_2_source(
+            datasize(DATASIZE),
+            FPDataOp2Source::FNMUL,
+            vm,
+            vn,
+            vd,
+        ));
+    }
+
+    pub fn vand<const DATASIZE: i32>(&mut self, vd: u8, vn: u8, vm: u8) {
+        self.insn(Self::vector_data_processing_logical(
+            DATASIZE,
+            SIMD3SameLogical::AND,
+            vm,
+            vn,
+            vd,
+        ));
+    }
+
+    pub fn vorr<const DATASIZE: i32>(&mut self, vd: u8, vn: u8, vm: u8) {
+        self.insn(Self::vector_data_processing_logical(
+            DATASIZE,
+            SIMD3SameLogical::ORR,
+            vm,
+            vn,
+            vd,
+        ));
+    }
+
+    pub fn vbic<const DATASIZE: i32>(&mut self, vd: u8, vn: u8, vm: u8) {
+        self.insn(Self::vector_data_processing_logical(
+            DATASIZE,
+            SIMD3SameLogical::BIC,
+            vm,
+            vn,
+            vd,
+        ));
+    }
+
+    pub fn frinta<const DATASIZE: i32>(&mut self, vd: u8, vn: u8) {
+        self.insn(Self::floating_point_data_processing_1_source(
+            datasize(DATASIZE),
+            FPDataOp1Source::FRINTA,
+            vn,
+            vd,
+        ));
+    }
+
+    pub fn frinti<const DATASIZE: i32>(&mut self, vd: u8, vn: u8) {
+        self.insn(Self::floating_point_data_processing_1_source(
+            datasize(DATASIZE),
+            FPDataOp1Source::FRINTI,
+            vn,
+            vd,
+        ));
+    }
+
+    pub fn frintm<const DATASIZE: i32>(&mut self, vd: u8, vn: u8) {
+        self.insn(Self::floating_point_data_processing_1_source(
+            datasize(DATASIZE),
+            FPDataOp1Source::FRINTM,
+            vn,
+            vd,
+        ));
+    }
+
+    pub fn frintn<const DATASIZE: i32>(&mut self, vd: u8, vn: u8) {
+        self.insn(Self::floating_point_data_processing_1_source(
+            datasize(DATASIZE),
+            FPDataOp1Source::FRINTN,
+            vn,
+            vd,
+        ));
+    }
+
+    pub fn frintp<const DATASIZE: i32>(&mut self, vd: u8, vn: u8) {
+        self.insn(Self::floating_point_data_processing_1_source(
+            datasize(DATASIZE),
+            FPDataOp1Source::FRINTP,
+            vn,
+            vd,
+        ));
+    }
+
+    pub fn frintx<const DATASIZE: i32>(&mut self, vd: u8, vn: u8) {
+        self.insn(Self::floating_point_data_processing_1_source(
+            datasize(DATASIZE),
+            FPDataOp1Source::FRINTX,
+            vn,
+            vd,
+        ));
+    }
+
+    pub fn fsqrt<const DATASIZE: i32>(&mut self, vd: u8, vn: u8) {
+        self.insn(Self::floating_point_data_processing_1_source(
+            datasize(DATASIZE),
+            FPDataOp1Source::FSQRT,
+            vn,
+            vd,
+        ));
+    }
+
+    pub fn fsub<const DATASIZE: i32>(&mut self, vd: u8, vn: u8, vm: u8) {
+        self.insn(Self::floating_point_data_processing_2_source(
+            datasize(DATASIZE),
+            FPDataOp2Source::FSUB,
+            vm,
+            vn,
+            vd,
+        ));
+    }
+
+    pub fn ldr_fp<const DATASIZE: i32>(&mut self, rt: u8, rn: u8, rm: u8) {
+        self.ldr_extend_fp::<DATASIZE>(rt, rn, rm, ExtendType::UXTX, 0);
+    }
+
+    pub fn ldr_extend_fp<const DATASIZE: i32>(
+        &mut self,
+        rt: u8,
+        rn: u8,
+        rm: u8,
+        extend: ExtendType,
+        amount: i32,
+    ) {
+        self.insn(Self::load_store_register_offset(
+            memopsize(DATASIZE),
+            true,
+            if DATASIZE == 128 {
+                MemOp::LAODV128
+            } else {
+                MemOp::LOAD
+            },
+            rm,
+            extend,
+            encode_shift_amount::<DATASIZE>(amount) != 0,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn ldr_imm_fp<const DATASIZE: i32>(&mut self, rt: u8, rn: u8, pimm: i32) {
+        self.insn(Self::load_store_register_unsigned_immediate(
+            memopsize(DATASIZE),
+            true,
+            if DATASIZE == 128 {
+                MemOp::LAODV128
+            } else {
+                MemOp::LOAD
+            },
+            encode_positive_immediate::<DATASIZE>(pimm as _),
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn ldr_post_fp<const DATASIZE: i32>(&mut self, rt: u8, rn: u8, imm: PostIndex) {
+        self.insn(Self::load_store_register_post_index(
+            memopsize(DATASIZE),
+            true,
+            if DATASIZE == 128 {
+                MemOp::LAODV128
+            } else {
+                MemOp::LOAD
+            },
+            imm.0,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn ldr_pre_fp<const DATASIZE: i32>(&mut self, rt: u8, rn: u8, imm: PreIndex) {
+        self.insn(Self::load_store_register_pre_index(
+            memopsize(DATASIZE),
+            true,
+            if DATASIZE == 128 {
+                MemOp::LAODV128
+            } else {
+                MemOp::LOAD
+            },
+            imm.0,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn ldr_literal_fp<const DATASIZE: i32>(&mut self, rt: u8, offset: i32) {
+        self.insn(Self::load_register_literal(
+            if DATASIZE == 128 {
+                LdrLiteralOp::S128
+            } else if DATASIZE == 64 {
+                LdrLiteralOp::S64
+            } else {
+                LdrLiteralOp::S32
+            },
+            true,
+            offset >> 2,
+            rt,
+        ))
+    }
+
+    pub fn ldur_fp<const DATASIZE: i32>(&mut self, rt: u8, rn: u8, simm: i32) {
+        self.insn(Self::load_store_register_unscaled_immediate(
+            memopsize(DATASIZE),
+            true,
+            if DATASIZE == 128 {
+                MemOp::LAODV128
+            } else {
+                MemOp::LOAD
+            },
+            simm,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn scvtf<const DSTSIZE: i32, const SRCSIZE: i32>(&mut self, vd: u8, rn: u8) {
+        self.insn(Self::floating_point_integer_conversion_i2f(
+            datasize(SRCSIZE),
+            datasize(DSTSIZE),
+            FPIntConvOp::SCVTF,
+            rn,
+            vd,
+        ))
+    }
+
+    pub fn str_fp<const DATASIZE: i32>(&mut self, rt: u8, rn: u8, rm: u8) {
+        self.str_extend_fp::<DATASIZE>(rt, rn, rm, ExtendType::UXTX, 0);
+    }
+
+    pub fn str_extend_fp<const DATASIZE: i32>(
+        &mut self,
+        rt: u8,
+        rn: u8,
+        rm: u8,
+        extend: ExtendType,
+        amount: i32,
+    ) {
+        self.insn(Self::load_store_register_offset(
+            memopsize(DATASIZE),
+            false,
+            if DATASIZE == 128 {
+                MemOp::STOREV128
+            } else {
+                MemOp::STORE
+            },
+            rm,
+            extend,
+            encode_shift_amount::<DATASIZE>(amount) != 0,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn str_imm_fp<const DATASIZE: i32>(&mut self, rt: u8, rn: u8, pimm: i32) {
+        self.insn(Self::load_store_register_unsigned_immediate(
+            memopsize(DATASIZE),
+            false,
+            if DATASIZE == 128 {
+                MemOp::STOREV128
+            } else {
+                MemOp::STORE
+            },
+            encode_positive_immediate::<DATASIZE>(pimm as _),
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn str_post_fp<const DATASIZE: i32>(&mut self, rt: u8, rn: u8, imm: PostIndex) {
+        self.insn(Self::load_store_register_post_index(
+            memopsize(DATASIZE),
+            false,
+            if DATASIZE == 128 {
+                MemOp::STOREV128
+            } else {
+                MemOp::STORE
+            },
+            imm.0,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn str_pre_fp<const DATASIZE: i32>(&mut self, rt: u8, rn: u8, imm: PreIndex) {
+        self.insn(Self::load_store_register_pre_index(
+            memopsize(DATASIZE),
+            false,
+            if DATASIZE == 128 {
+                MemOp::STOREV128
+            } else {
+                MemOp::STORE
+            },
+            imm.0,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn stur_fp<const DATASIZE: i32>(&mut self, rt: u8, rn: u8, simm: i32) {
+        self.insn(Self::load_store_register_unscaled_immediate(
+            memopsize(DATASIZE),
+            false,
+            if DATASIZE == 128 {
+                MemOp::STOREV128
+            } else {
+                MemOp::STORE
+            },
+            simm,
+            rn,
+            rt,
+        ))
+    }
+
+    pub fn ucvtf<const DSTSIZE: i32, const SRCSIZE: i32>(&mut self, vd: u8, rn: u8) {
+        self.insn(Self::floating_point_integer_conversion_i2f(
+            datasize(SRCSIZE),
+            datasize(DSTSIZE),
+            FPIntConvOp::UCVTF,
+            rn,
+            vd,
+        ))
+    }
+
+    fn fjcvtzs_insn(dn: u8, rd: u8) -> i32 {
+        0x1e7e0000 | (dn as i32) << 5 | (rd as i32)
+    }
+
+    pub fn fjcvtzs(&mut self, rd: u8, dn: u8) {
+        self.insn(Self::fjcvtzs_insn(dn, rd))
+    }
+
+    const fn exotic_atomic_load_store(
+        size: MemOpSize,
+        op: ExoticAtomicLoadStore,
+        load_fence: ExoticLoadFence,
+        store_fence: ExoticStoreFence,
+        rs: u8,
+        rt: u8,
+        rn: u8,
+    ) -> i32 {
+        0b00111000_00100000_00000000_00000000
+            | (size as i32) << 30
+            | (load_fence as i32) << 23
+            | (store_fence as i32) << 22
+            | (rs as i32) << 16
+            | (op as i32) << 10
+            | (rn as i32) << 5
+            | (rt as i32)
+    }
+
+    const fn exotic_atomic_cas(
+        size: MemOpSize,
+        load_fence: ExoticLoadFence,
+        store_fence: ExoticStoreFence,
+        rs: u8,
+        rt: u8,
+        rn: u8,
+    ) -> i32 {
+        0b00001000_10100000_01111100_00000000
+            | (size as i32) << 30
+            | (store_fence as i32) << 22
+            | (rs as i32) << 16
+            | (load_fence as i32) << 15
+            | (rn as i32) << 5
+            | (rt as i32)
+    }
+
+    pub fn ldaddal<const DATASIZE: i32>(&mut self, rs: u8, rt: u8, rn: u8) {
+        self.insn(Self::exotic_atomic_load_store(
+            memopsize(DATASIZE),
+            ExoticAtomicLoadStore::Add,
+            ExoticLoadFence::Acquire,
+            ExoticStoreFence::Release,
+            rs,
+            rt,
+            rn,
+        ))
+    }
+
+    pub fn ldeoral<const DATASIZE: i32>(&mut self, rs: u8, rt: u8, rn: u8) {
+        self.insn(Self::exotic_atomic_load_store(
+            memopsize(DATASIZE),
+            ExoticAtomicLoadStore::Xor,
+            ExoticLoadFence::Acquire,
+            ExoticStoreFence::Release,
+            rs,
+            rt,
+            rn,
+        ))
+    }
+
+    pub fn ldclral<const DATASIZE: i32>(&mut self, rs: u8, rt: u8, rn: u8) {
+        self.insn(Self::exotic_atomic_load_store(
+            memopsize(DATASIZE),
+            ExoticAtomicLoadStore::Clear,
+            ExoticLoadFence::Acquire,
+            ExoticStoreFence::Release,
+            rs,
+            rt,
+            rn,
+        ))
+    }
+
+    pub fn ldsetal<const DATASIZE: i32>(&mut self, rs: u8, rt: u8, rn: u8) {
+        self.insn(Self::exotic_atomic_load_store(
+            memopsize(DATASIZE),
+            ExoticAtomicLoadStore::Set,
+            ExoticLoadFence::Acquire,
+            ExoticStoreFence::Release,
+            rs,
+            rt,
+            rn,
+        ))
+    }
+
+    pub fn swpal<const DATASIZE: i32>(&mut self, rs: u8, rt: u8, rn: u8) {
+        self.insn(Self::exotic_atomic_load_store(
+            memopsize(DATASIZE),
+            ExoticAtomicLoadStore::Swap,
+            ExoticLoadFence::Acquire,
+            ExoticStoreFence::Release,
+            rs,
+            rt,
+            rn,
+        ))
+    }
+
+    pub fn casal<const DATASIZE: i32>(&mut self, rs: u8, rt: u8, rn: u8) {
+        self.insn(Self::exotic_atomic_cas(
+            memopsize(DATASIZE),
+            ExoticLoadFence::Acquire,
+            ExoticStoreFence::Release,
+            rs,
+            rt,
+            rn,
+        ))
+    }
+
     const fn x_or_sp(r: u8) -> i32 {
         r as i32
     }
@@ -5141,6 +5974,54 @@ impl ARM64Assembler {
             | (cmode as i32) << 12
             | (((imm as usize) & 0b11111) << 5) as i32
             | rd as i32
+    }
+
+    unsafe fn disassemble_unconditional_branch_immediate(addr: *const u8) -> Option<(bool, i32)> {
+        let insn = addr.cast::<i32>().read();
+        let op = (insn >> 31) & 1;
+        let imm26 = (insn << 6) >> 6;
+        ((insn & 0x7c000000) == 0x14000000).then(|| (op == 1, imm26))
+    }
+
+    unsafe fn disassemble_test_and_branch_immediate(
+        addr: *const u8,
+    ) -> Option<(bool, usize, i32, u8)> {
+        let insn = addr.cast::<i32>().read();
+        let op = (insn >> 24) & 0x1;
+        let imm14 = (insn << 13) >> 18;
+        let bit_number = (insn >> 26) & 0x20 | ((insn >> 19) & 0x1f);
+        let rt = insn & 0x1f;
+
+        ((insn & 0x7e000000) == 0x36000000).then(|| (op == 1, bit_number as usize, imm14, rt as u8))
+    }
+
+    unsafe fn disassemble_conditional_branch_immediate(
+        addr: *const u8,
+    ) -> Option<(usize, i32, Condition)> {
+        let insn = addr.cast::<i32>().read();
+
+        let op01 = ((insn >> 23) & 0x2) | ((insn >> 4) & 0x1);
+        let imm19 = (insn << 8) >> 13;
+        let condition: Condition = transmute((insn & 0xf) as u8);
+
+        ((insn as u32 & 0xfe000000u32) == 0x54000000).then(|| (op01 as usize, imm19, condition))
+    }
+
+    unsafe fn disassemble_compare_and_branch_immediate(
+        addr: *const u8,
+    ) -> Option<(Datasize, bool, i32, u8)> {
+        let insn = addr.cast::<i32>().read();
+        let sf: Datasize = transmute(((insn >> 31) & 0x1) as u8);
+        let op = (insn >> 24) & 0x1;
+        let imm19 = (insn << 8) >> 13;
+        let rt = insn & 0x1f;
+
+        ((insn & 0x7e000000) == 0x34000000).then(|| (sf, op == 1, imm19, rt as u8))
+    }
+
+    unsafe fn disassemble_nop(addr: *const u8) -> bool {
+        let insn = addr.cast::<u32>().read();
+        insn == 0xd503201fu32
     }
 }
 

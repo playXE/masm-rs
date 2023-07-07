@@ -46,8 +46,7 @@ pub const fn is_valid_signed_imm7(x: i32, alignment_shift_amount: i32) -> bool {
 pub struct ARM64LogicalImmediate(pub i32);
 
 impl ARM64LogicalImmediate {
-
-    pub fn create32(value: u32) -> Self {
+    pub fn create32(mut value: u32) -> Self {
         if value == 0 || !value == 0 {
             return ARM64LogicalImmediate(-1);
         }
@@ -57,18 +56,18 @@ impl ARM64LogicalImmediate {
         let mut hsb = 0;
         let mut lsb = 0;
         let mut inverted = false;
-        let mut value = value as u64;
-        if Self::find_bit_range::<32>(value, &mut hsb, &mut lsb, &mut inverted) {
+        
+        if Self::find_bit_range::<32>(value as u64, &mut hsb, &mut lsb, &mut inverted) {
             return Self(Self::encode_logical_immediate::<32>(hsb, lsb, inverted));
         }
-
+       
         if (value & 0xffff) != (value >> 16) {
             return ARM64LogicalImmediate(-1);
         }
 
         value &= 0xffff;
 
-        if Self::find_bit_range::<16>(value, &mut hsb, &mut lsb, &mut inverted) {
+        if Self::find_bit_range::<16>(value as _, &mut hsb, &mut lsb, &mut inverted) {
             return Self(Self::encode_logical_immediate::<16>(hsb, lsb, inverted));
         }
 
@@ -78,7 +77,7 @@ impl ARM64LogicalImmediate {
 
         value &= 0xff;
 
-        if Self::find_bit_range::<8>(value, &mut hsb, &mut lsb, &mut inverted) {
+        if Self::find_bit_range::<8>(value as _, &mut hsb, &mut lsb, &mut inverted) {
             return Self(Self::encode_logical_immediate::<8>(hsb, lsb, inverted));
         }
 
@@ -88,7 +87,7 @@ impl ARM64LogicalImmediate {
 
         value &= 0xf;
 
-        if Self::find_bit_range::<4>(value, &mut hsb, &mut lsb, &mut inverted) {
+        if Self::find_bit_range::<4>(value as _, &mut hsb, &mut lsb, &mut inverted) {
             return Self(Self::encode_logical_immediate::<4>(hsb, lsb, inverted));
         }
 
@@ -98,7 +97,7 @@ impl ARM64LogicalImmediate {
 
         value &= 0x3;
 
-        if Self::find_bit_range::<2>(value, &mut hsb, &mut lsb, &mut inverted) {
+        if Self::find_bit_range::<2>(value as _, &mut hsb, &mut lsb, &mut inverted) {
             return Self(Self::encode_logical_immediate::<2>(hsb, lsb, inverted));
         }
 
@@ -173,6 +172,9 @@ impl ARM64LogicalImmediate {
         lsb: &mut usize,
         inverted: &mut bool,
     ) -> bool {
+        assert!((value & Self::mask(WIDTH as usize - 1)) != 0);
+        assert!(value != Self::mask(WIDTH as usize - 1));
+        assert!((value & !Self::mask(WIDTH as usize - 1)) == 0);
         // Detect cases where the top bit is set; if so, flip all the bits & set invert.
         // This halves the number of patterns we need to look for.
         let msb = 1 << (WIDTH - 1);
@@ -211,7 +213,7 @@ impl ARM64LogicalImmediate {
         let mut imm_s = 0;
         let imm_r;
 
-         // For 64-bit values this is easy - just set immN to true, and imms just
+        // For 64-bit values this is easy - just set immN to true, and imms just
         // contains the bit number of the highest set bit of the set range. For
         // values with narrower widths, these are encoded by a leading set of
         // one bits, followed by a zero bit, followed by the remaining set of bits
@@ -277,7 +279,7 @@ impl SIMDLane {
             Self::I32X4 => Self::I16X8,
             Self::I64X2 => Self::I32X4,
             Self::F64X2 => Self::F32X4,
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
@@ -287,7 +289,7 @@ impl SIMDLane {
             Self::I16X8 => Self::I32X4,
             Self::I32X4 => Self::I64X2,
             Self::F32X4 => Self::F64X2,
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 

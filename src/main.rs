@@ -1,11 +1,11 @@
 
-use jit_allocator::JitAllocatorOptions;
-use macroassembler::assembler::{arm64assembler::*, assembler_common::SIMDLane};
+
+use macroassembler::assembler::{arm64assembler::*, assembler_common::{ARM64LogicalImmediate}};
 use capstone::prelude::*;
 fn main() {
     let mut asm = ARM64Assembler::new();
 
-    asm.uzip1(q0, q1, q0, SIMDLane::I32X4);
+    asm.movz::<32>(x0, 42, 0);
     asm.ret(lr);
 
     let cs = Capstone::new()
@@ -13,6 +13,15 @@ fn main() {
         .mode(arch::arm64::ArchMode::Arm)
         .build()
         .unwrap();
+
+
+    for insn in asm.buffer().data().chunks(4) {
+        for val in insn.iter() {
+            print!("{:02x} ", val);
+        }
+
+        println!();
+    }
 
     let insns = cs.disasm_all(asm.buffer().data(), 0x0).unwrap();
 
