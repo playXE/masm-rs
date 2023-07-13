@@ -2026,7 +2026,7 @@ impl X86Assembler {
 
     pub fn testb_i8r(&mut self, imm: i32, dst: u8) {
         if dst == eax {
-            self.formatter.one_byte_op(OP_TEST_EAXIv);
+            self.formatter.one_byte_op(OP_TEST_ALIb);
         } else {
             self.formatter
                 .one_byte_op_rm(OP_GROUP3_EbIb, GROUP3_OP_TEST, dst);

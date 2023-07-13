@@ -3444,6 +3444,7 @@ impl MacroAssemblerX86Common {
             } else {
                 self.assembler.testb_i8r(mask as _, reg);
             }
+            
         } else {
             self.assembler.testl_i32r(mask, reg);
         }
