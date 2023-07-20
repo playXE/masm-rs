@@ -2,7 +2,7 @@
 use crate::assembler::assembler_common::{is_int, is_int9, is_uint12};
 use std::{
     mem::{size_of, transmute},
-    ops::{Deref, DerefMut},
+    ops::{Deref, DerefMut}, default,
 };
 
 use super::{
@@ -312,9 +312,9 @@ const MAX_POINTER_BITS: usize = 64;
 #[cfg(not(all(target_vendor = "apple", target_arch = "aarch64")))]
 const MAX_POINTER_BITS: usize = 48;
 
-const NUMBER_OF_ADDRESS_ENCODING_INSTRUCTIONS: usize = MAX_POINTER_BITS / 16;
+pub const NUMBER_OF_ADDRESS_ENCODING_INSTRUCTIONS: usize = MAX_POINTER_BITS / 16;
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
 #[repr(u8)]
 pub enum Condition {
     EQ = 0,
@@ -332,6 +332,7 @@ pub enum Condition {
     GT,
     LE,
     AL,
+    #[default]
     Invalid,
 }
 
@@ -391,10 +392,11 @@ enum ExoticAtomicLoadStore {
     Swap = 0b1_000_00,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
 #[repr(u8)]
 pub enum JumpType {
     Fixed = jump_with_size(0, 0),
+    #[default]
     NoCondition = jump_with_size(1, 1),
     Condition = jump_with_size(2, 2 * size_of::<u32>() as u8),
     CompareAndBranch = jump_with_size(3, 2 * size_of::<u32>() as u8),
@@ -1031,20 +1033,34 @@ impl ARM64Assembler {
         &mut self.buffer
     }
 
+    pub unsafe fn address_of(code: *mut u8, label: AssemblerLabel) -> *mut i32 {
+        code.add(label.offset() as _).cast()
+    }
+
     pub unsafe fn link_pointer(code: *mut u8, where_: AssemblerLabel, to: *mut u8) {
-        todo!()
+        Self::link_pointer_raw(Self::address_of(code, where_), to, false);
     }
 
     pub unsafe fn link_call(code: *mut u8, where_: AssemblerLabel, to: *mut u8) {
-        todo!()
+        Self::link_jump_or_call(
+            BranchType::CALL,
+            Self::address_of(code, where_).sub(1),
+            Self::address_of(code, where_).sub(1),
+            to,
+        );
     }
 
     pub unsafe fn link_tail_call(code: *mut u8, where_: AssemblerLabel, to: *mut u8) {
-        todo!()
+        Self::link_jump_(code, where_, to);
     }
 
     pub unsafe fn link_jump_(code: *mut u8, where_: AssemblerLabel, to: *mut u8) {
-        todo!()
+        Self::link_jump_or_call(
+            BranchType::JMP,
+            Self::address_of(code, where_),
+            Self::address_of(code, where_),
+            to,
+        );
     }
 
     pub fn label_for_watchpoint(&mut self) -> AssemblerLabel {
@@ -1103,16 +1119,40 @@ impl ARM64Assembler {
         todo!()
     }
 
-    pub unsafe fn relink_jump(from: *mut u8, to: *mut u8) {
-        todo!()
+    pub unsafe fn replace_with_vm_halt(where_: *mut u8) {
+        let insn = Self::data_cache_zero_virtual_address(zr);
+        where_.cast::<i32>().write_unaligned(insn);
+        jit_allocator::virtual_memory::flush_instruction_cache(where_, size_of::<i32>());
     }
 
-    pub unsafe fn relink_tail_call(from: *mut u8, to: *mut u8) {
-        todo!()
+    pub unsafe fn replace_with_jump(where_: *mut u8, to: *const u8) {
+        let offset = to.offset_from(where_) as i32;
+
+        let insn = Self::unconditional_branch_immediate(false, offset);
+        where_.cast::<i32>().write_unaligned(insn);
+        jit_allocator::virtual_memory::flush_instruction_cache(where_, size_of::<i32>());
+    }
+
+    pub unsafe fn relink_jump(from: *mut u8, to: *mut u8) {
+        Self::relink_jump_or_call(BranchType::JMP, from.cast(), from.cast(), to);
+        jit_allocator::virtual_memory::flush_instruction_cache(from, size_of::<i32>());
     }
 
     pub unsafe fn relink_call(from: *mut u8, to: *mut u8) {
-        todo!()
+        Self::relink_jump_or_call(
+            BranchType::CALL,
+            from.cast::<i32>().sub(1),
+            from.cast::<i32>().sub(1),
+            to,
+        );
+        jit_allocator::virtual_memory::flush_instruction_cache(
+            from.cast::<i32>().sub(1).cast(),
+            size_of::<i32>(),
+        );
+    }
+
+    pub unsafe fn relink_tail_call(from: *mut u8, to: *mut u8) {
+        Self::relink_jump(from, to);
     }
 
     pub fn get_call_return_offset(call: AssemblerLabel) -> usize {
@@ -1123,8 +1163,57 @@ impl ARM64Assembler {
         code.add(label.offset() as _)
     }
 
-    pub fn link_jump(&mut self, from: AssemblerLabel, to: AssemblerLabel) {
-        todo!()
+    pub fn link_jump_cond(
+        &mut self,
+        from: AssemblerLabel,
+        to: AssemblerLabel,
+        typ: JumpType,
+        cond: Condition,
+    ) {
+        self.jumps_to_link.push(LinkRecord::new_cond(
+            from.offset() as _,
+            to.offset() as _,
+            typ,
+            cond,
+        ))
+    }
+
+    pub fn link_jump_cmp(
+        &mut self,
+        from: AssemblerLabel,
+        to: AssemblerLabel,
+        typ: JumpType,
+        cond: Condition,
+        is_64bit: bool,
+        compare_register: u8 
+    ) {
+        self.jumps_to_link.push(LinkRecord::new_cmp(
+            from.offset() as _,
+            to.offset() as _,
+            typ,
+            cond,
+            is_64bit,
+            compare_register,
+        ))
+    }
+
+    pub fn link_jump_test_bit(
+        &mut self,
+        from: AssemblerLabel,
+        to: AssemblerLabel,
+        typ: JumpType,
+        cond: Condition,
+        bit_number: u8,
+        compare_register: u8,
+    ) {
+        self.jumps_to_link.push(LinkRecord::new_test_bit(
+            from.offset() as _,
+            to.offset() as _,
+            typ,
+            cond,
+            bit_number,
+            compare_register,
+        ))
     }
 
     pub fn debug_offset(&self) -> usize {
@@ -3301,6 +3390,7 @@ impl ARM64Assembler {
     }
 
     pub fn movi<const DATASIZE: i32>(&mut self, rd: u8, imm: LogicalImmediate) {
+        assert!(imm.is_valid());
         self.orr_imm::<DATASIZE>(rd, zr, imm);
     }
 
@@ -6134,7 +6224,9 @@ impl ARM64Assembler {
                 return;
             }
 
-            if let Some((mut op, bit_number, imm14, rt)) = Self::disassemble_test_and_branch_immediate(from.sub(1).cast()) {
+            if let Some((mut op, bit_number, imm14, rt)) =
+                Self::disassemble_test_and_branch_immediate(from.sub(1).cast())
+            {
                 if imm14 == 8 {
                     op = !op;
                 }
@@ -6386,6 +6478,151 @@ impl ARM64Assembler {
         let diff = (to as isize).wrapping_sub(from as isize);
 
         is_int::<26>(diff as _)
+    }
+
+    pub unsafe fn link(
+        record: &LinkRecord,
+        from: *mut u8,
+        from_instruction: *const u8,
+        to: *mut u8,
+    ) {
+        let from_instruction = from_instruction.cast::<i32>();
+
+        match record.link_type {
+            JumpLinkType::NoCondition => {
+                Self::link_jump_or_call(BranchType::JMP, from.cast(), from_instruction, to);
+            }
+
+            JumpLinkType::ConditionDirect => {
+                Self::link_conditional_branch(
+                    true,
+                    record.condition,
+                    from.cast(),
+                    from_instruction,
+                    to,
+                );
+            }
+
+            JumpLinkType::Condition => {
+                Self::link_conditional_branch(
+                    false,
+                    record.condition,
+                    from.cast(),
+                    from_instruction,
+                    to,
+                );
+            }
+
+            JumpLinkType::CompareAndBranchDirect => {
+                Self::link_compare_and_branch(
+                    true,
+                    record.condition,
+                    record.is_64bit,
+                    record.compare_register,
+                    from.cast(),
+                    from_instruction,
+                    to,
+                );
+            }
+
+            JumpLinkType::CompareAndBranch => {
+                Self::link_compare_and_branch(
+                    false,
+                    record.condition,
+                    record.is_64bit,
+                    record.compare_register,
+                    from.cast(),
+                    from_instruction,
+                    to,
+                );
+            }
+
+            JumpLinkType::TestBitDirect => {
+                Self::link_test_and_branch(
+                    true,
+                    record.condition,
+                    record.bit_number as _,
+                    record.compare_register,
+                    from.cast(),
+                    from_instruction,
+                    to,
+                );
+            }
+
+            JumpLinkType::TestBit => {
+                Self::link_test_and_branch(
+                    false,
+                    record.condition,
+                    record.bit_number as _,
+                    record.compare_register,
+                    from.cast(),
+                    from_instruction,
+                    to,
+                );
+            }
+
+            JumpLinkType::Invalid => {
+                unreachable!("Invalid jump link type");
+            }
+        }
+    }
+
+    pub fn jumps_to_link(&mut self) -> &[LinkRecord] {
+        self.jumps_to_link.sort_by(|a, b| a.from.cmp(&b.from));
+
+        &self.jumps_to_link
+    }
+
+    pub fn compute_jump_type_raw(jt: JumpType, from: *const u8, to: *const u8) -> JumpLinkType {
+        match jt {
+            JumpType::Fixed => JumpLinkType::Invalid,
+            JumpType::NoConditionFixedSize => JumpLinkType::NoCondition,
+            JumpType::ConditionFixedSize => JumpLinkType::Condition,
+            JumpType::CompareAndBranchFixedSize => JumpLinkType::CompareAndBranch,
+            JumpType::TestBitFixedSize => JumpLinkType::TestBit,
+            JumpType::NoCondition => JumpLinkType::NoCondition,
+            JumpType::Condition => {
+                let relative = (to as isize).wrapping_sub(from as isize);
+
+                if is_int::<21>(relative as _) {
+                    JumpLinkType::ConditionDirect
+                } else {
+                    JumpLinkType::Condition
+                }
+            }
+
+            JumpType::CompareAndBranch => {
+                let relative = (to as isize).wrapping_sub(from as isize);
+
+                if is_int::<19>(relative as _) {
+                    JumpLinkType::CompareAndBranchDirect
+                } else {
+                    JumpLinkType::CompareAndBranch
+                }
+            }
+
+            JumpType::TestBit => {
+                let relative = (to as isize).wrapping_sub(from as isize);
+
+                if is_int::<14>(relative as _) {
+                    JumpLinkType::TestBitDirect
+                } else {
+                    JumpLinkType::TestBit
+                }
+            }
+
+            _ => JumpLinkType::NoCondition,
+        }
+    }
+
+    pub fn compute_jump_type(
+        record: &mut LinkRecord,
+        from: *const u8,
+        to: *const u8,
+    ) -> JumpLinkType {
+        let link_type = Self::compute_jump_type_raw(record.typ, from, to);
+        record.link_type = link_type;
+        link_type
     }
 }
 

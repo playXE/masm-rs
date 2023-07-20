@@ -429,24 +429,108 @@ impl Call {
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
 pub struct Jump {
     pub label: AssemblerLabel,
+    #[cfg(target_arch = "aarch64")]
+    pub typ: super::arm64assembler::JumpType,
+    #[cfg(target_arch = "aarch64")]
+    pub condition: super::arm64assembler::Condition,
+    #[cfg(target_arch = "aarch64")]
+    pub is_64bit: bool,
+    #[cfg(target_arch = "aarch64")]
+    pub bit_number: usize,
+    #[cfg(target_arch = "aarch64")]
+    pub compare_register: u8,
 }
 
 impl Jump {
     pub const fn new(label: AssemblerLabel) -> Self {
-        Self { label }
+        Self {
+            label,
+            #[cfg(target_arch = "aarch64")]
+            typ: super::arm64assembler::JumpType::NoCondition,
+            #[cfg(target_arch = "aarch64")]
+            condition: super::arm64assembler::Condition::Invalid,
+            #[cfg(target_arch = "aarch64")]
+            is_64bit: false,
+            #[cfg(target_arch = "aarch64")]
+            bit_number: 0,
+            #[cfg(target_arch = "aarch64")]
+            compare_register: super::arm64assembler::INVALID_GPR,
+        }
     }
 
     pub const fn label(&self) -> Label {
         Label { label: self.label }
     }
 
-    pub fn link(&self, masm: &mut AbstractMacroAssembler) {
-        let label = masm.assembler.label();
-        masm.assembler.link_jump(self.label, label);
+    pub fn link(&self, masm: &mut TargetMacroAssembler) {
+        #[cfg(not(target_arch = "aarch64"))]
+        {
+            let label = masm.assembler.label();
+            masm.assembler.link_jump(self.label, label);
+        }
+
+        #[cfg(target_arch = "aarch64")]
+        {
+            use super::arm64assembler::*;
+            let label = masm.assembler.label();
+            if self.typ == JumpType::CompareAndBranch
+                || self.typ == JumpType::CompareAndBranchFixedSize
+            {
+                masm.link_jump_cmp(
+                    self.label,
+                    label,
+                    self.typ,
+                    self.condition,
+                    self.is_64bit,
+                    self.compare_register,
+                );
+            } else if self.typ == JumpType::TestBit || self.typ == JumpType::TestBitFixedSize {
+                masm.link_jump_test_bit(
+                    self.label,
+                    label,
+                    self.typ,
+                    self.condition,
+                    self.bit_number as _,
+                    self.compare_register,
+                );
+            } else {
+                masm.link_jump_cond(self.label, label, self.typ, self.condition);
+            }
+        }
     }
 
-    pub fn link_to(&self, masm: &mut AbstractMacroAssembler, target: Label) {
+    pub fn link_to(&self, masm: &mut TargetMacroAssembler, target: Label) {
+        #[cfg(not(target_arch = "aarch64"))]
         masm.assembler.link_jump(self.label, target.label);
+
+        #[cfg(target_arch = "aarch64")]
+        {
+            use super::arm64assembler::*;
+            let label = target.label;
+            if self.typ == JumpType::CompareAndBranch
+                || self.typ == JumpType::CompareAndBranchFixedSize
+            {
+                masm.link_jump_cmp(
+                    self.label,
+                    label,
+                    self.typ,
+                    self.condition,
+                    self.is_64bit,
+                    self.compare_register,
+                );
+            } else if self.typ == JumpType::TestBit || self.typ == JumpType::TestBitFixedSize {
+                masm.link_jump_test_bit(
+                    self.label,
+                    label,
+                    self.typ,
+                    self.condition,
+                    self.bit_number as _,
+                    self.compare_register,
+                );
+            } else {
+                masm.link_jump_cond(self.label, label, self.typ, self.condition);
+            }
+        }
     }
 
     pub fn is_set(&self) -> bool {
@@ -494,13 +578,13 @@ impl JumpList {
         Self { jumps }
     }
 
-    pub fn link(&self, masm: &mut AbstractMacroAssembler) {
+    pub fn link(&self, masm: &mut TargetMacroAssembler) {
         for jump in &self.jumps {
             jump.link(masm);
         }
     }
 
-    pub fn link_to(&self, masm: &mut AbstractMacroAssembler, target: Label) {
+    pub fn link_to(&self, masm: &mut TargetMacroAssembler, target: Label) {
         for jump in &self.jumps {
             jump.link_to(masm, target);
         }
@@ -605,7 +689,7 @@ impl AbstractMacroAssembler {
     }
 
     pub unsafe fn read_pointer(data_label: *mut u8) -> *mut u8 {
-        TargetAssembler::read_pointer(data_label)
+        TargetAssembler::read_pointer(data_label) as _
     }
 
     pub unsafe fn replace_with_load(label: *mut u8) {
