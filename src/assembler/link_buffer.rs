@@ -215,7 +215,7 @@ impl LinkBuffer {
     pub fn patch(&mut self, label: DataLabelPtr, value: *const u8) {
         unsafe {
             protect_jit_memory(ProtectJitAccess::ReadWrite);
-            TargetAssembler::link_pointer(self.code(), label.label, value as *mut u8);
+            TargetAssembler::link_pointer(self.code().cast(), label.label, value as *mut u8);
             protect_jit_memory(ProtectJitAccess::ReadExecute);
             flush_instruction_cache(self.code_rx, self.size);
         }

@@ -1095,12 +1095,6 @@ impl ARM64Assembler {
         todo!()
     }
 
-    pub unsafe fn read_pointer(ip: *mut u8) -> *mut u8 {
-        let address = ip.cast::<i32>();
-
-        todo!()
-    }
-
     pub unsafe fn repatch_pointer(where_: *mut u8, to: *mut u8) {
         todo!()
     }
@@ -6022,6 +6016,376 @@ impl ARM64Assembler {
     unsafe fn disassemble_nop(addr: *const u8) -> bool {
         let insn = addr.cast::<u32>().read();
         insn == 0xd503201fu32
+    }
+
+    const fn disassemble_x_or_sp(reg: i32) -> u8 {
+        if reg == 31 {
+            sp
+        } else {
+            reg as u8
+        }
+    }
+
+    const fn disassemble_x_or_zr(reg: i32) -> u8 {
+        if reg == 31 {
+            zr
+        } else {
+            reg as u8
+        }
+    }
+
+    const fn disassemble_x_or_zr_or_sp(reg: i32, use_zr: bool) -> u8 {
+        if reg == 31 {
+            if !use_zr {
+                sp
+            } else {
+                zr
+            }
+        } else {
+            reg as u8
+        }
+    }
+
+    unsafe fn disassemble_move_wide_immediate(
+        address: *const u8,
+    ) -> Option<(Datasize, MoveWideOp, i32, u16, u8)> {
+        let insn = address.cast::<i32>().read();
+        let sf = transmute(((insn >> 31) & 0x1) as u8);
+        let opc = transmute(((insn >> 29) & 0x3) as u8);
+        let hw = (insn >> 21) & 0x3;
+        let imm16 = insn >> 5;
+        let rd = Self::disassemble_x_or_zr(insn & 0x1f);
+
+        ((insn & 0x1f800000) == 0x12800000).then(|| (sf, opc, hw, imm16 as u16, rd))
+    }
+
+    unsafe fn disassemble_load_store_register_insigned_immediate(
+        address: *const u8,
+    ) -> Option<(MemOpSize, bool, MemOp, i32, u8, u8)> {
+        let insn = address.cast::<i32>().read();
+        let size = transmute(((insn >> 30) & 0x3) as u8);
+        let v = ((insn >> 26) & 0x1) == 1;
+        let opc = transmute(((insn >> 22) & 0x3) as u8);
+        let imm9 = (insn >> 10) & 0xfff;
+        let rn = Self::disassemble_x_or_sp((insn >> 5) & 0x1f);
+        let rt = Self::disassemble_x_or_zr(insn & 0x1f);
+
+        ((insn & 0x3b000000) == 0x39000000).then(|| (size, v, opc, imm9, rn, rt))
+    }
+
+    unsafe fn disassemble_add_subtract_immediate(
+        addr: *const u8,
+    ) -> Option<(Datasize, AddOp, SetFlags, i32, i32, u8, u8)> {
+        let insn = addr.cast::<i32>().read();
+        let sf = transmute(((insn >> 31) & 0x1) as u8);
+        let op = transmute(((insn >> 30) & 0x1) as u8);
+        let s = transmute(((insn >> 29) & 0x1) as u8);
+        let shift = (insn >> 22) & 3;
+        let imm12 = (insn >> 10) & 0x3ff;
+
+        let rn = Self::disassemble_x_or_sp((insn >> 5) & 0x1f);
+        let rd = Self::disassemble_x_or_zr_or_sp(insn & 0x1f, s == SetFlags::S);
+
+        ((insn & 0x1f000000) == 0x11000000).then(|| (sf, op, s, shift, imm12, rn, rd))
+    }
+
+    pub unsafe fn relink_jump_or_call(
+        typ: BranchType,
+        from: *mut i32,
+        from_instruction: *const i32,
+        to: *mut u8,
+    ) {
+        if typ == BranchType::JMP || typ == BranchType::CALL {
+            if let Some((op01, imm19, mut cond)) =
+                Self::disassemble_conditional_branch_immediate(from.sub(1).cast())
+            {
+                if imm19 == 8 {
+                    cond = cond.invert();
+                }
+
+                Self::link_conditional_branch(
+                    false,
+                    cond,
+                    from.sub(1).cast(),
+                    from_instruction.sub(1),
+                    to,
+                );
+
+                return;
+            }
+
+            if let Some((opsize, mut op, imm14, rt)) =
+                Self::disassemble_compare_and_branch_immediate(from.sub(1).cast())
+            {
+                if imm14 == 8 {
+                    op = !op;
+                }
+
+                Self::link_compare_and_branch(
+                    false,
+                    if op { Condition::NE } else { Condition::EQ },
+                    opsize == Datasize::D64,
+                    rt,
+                    from.sub(1),
+                    from_instruction.sub(1),
+                    to,
+                );
+
+                return;
+            }
+
+            if let Some((mut op, bit_number, imm14, rt)) = Self::disassemble_test_and_branch_immediate(from.sub(1).cast()) {
+                if imm14 == 8 {
+                    op = !op;
+                }
+
+                Self::link_test_and_branch(
+                    false,
+                    if op { Condition::NE } else { Condition::EQ },
+                    bit_number,
+                    rt,
+                    from.sub(1),
+                    from_instruction.sub(1),
+                    to,
+                );
+
+                return;
+            }
+        }
+
+        Self::link_jump_or_call(typ, from, from_instruction, to);
+    }
+
+    pub unsafe fn link_pointer_raw(address: *mut i32, value_ptr: *const u8, flush: bool) {
+        let (_, _, _, imm16, rd) = Self::disassemble_move_wide_immediate(address.cast()).unwrap();
+
+        Self::set_pointer(address, value_ptr, rd, flush);
+    }
+
+    pub unsafe fn link_jump_or_call(
+        typ: BranchType,
+        from: *mut i32,
+        from_instruction: *const i32,
+        to: *const u8,
+    ) {
+        let unconditional_branch = Self::disassemble_unconditional_branch_immediate(from.cast());
+        let mut link = false;
+        let mut imm26 = 0;
+
+        if let Some((l, i)) = unconditional_branch {
+            link = l;
+            imm26 = i;
+        } else {
+            assert!(Self::disassemble_nop(from.cast()));
+        }
+
+        let is_call = typ == BranchType::CALL;
+
+        let offset = (to as isize).wrapping_sub(from_instruction as isize) >> 2;
+
+        let insn = Self::unconditional_branch_immediate(is_call, offset as _);
+
+        from.write_volatile(insn);
+    }
+
+    pub unsafe fn link_compare_and_branch(
+        direct: bool,
+        cond: Condition,
+        is64bit: bool,
+        rt: u8,
+        from: *mut i32,
+        from_instruction: *const i32,
+        to: *const u8,
+    ) {
+        let offset = (to as isize).wrapping_sub(from_instruction as isize) >> 2;
+        let use_direct = is_int::<19>(offset as _);
+
+        if use_direct || direct {
+            let insn = Self::compare_and_branch_immediate(
+                if is64bit {
+                    Datasize::D64
+                } else {
+                    Datasize::D32
+                },
+                cond == Condition::NE,
+                offset as _,
+                rt,
+            );
+
+            from.write_volatile(insn);
+
+            if !direct {
+                let insn = Self::nop_pseudo();
+                from.add(1).write_volatile(insn);
+            }
+        } else {
+            let insn = Self::compare_and_branch_immediate(
+                if is64bit {
+                    Datasize::D64
+                } else {
+                    Datasize::D32
+                },
+                cond.invert() == Condition::NE,
+                2,
+                rt,
+            );
+
+            from.write_volatile(insn);
+
+            Self::link_jump_or_call(BranchType::JMP, from.add(1), from_instruction.add(1), to);
+        }
+    }
+
+    pub unsafe fn link_conditional_branch(
+        direct: bool,
+        cond: Condition,
+        from: *mut i32,
+        from_instruction: *const i32,
+        to: *const u8,
+    ) {
+        let offset = (to as isize).wrapping_sub(from_instruction as isize) >> 2;
+
+        let use_direct = is_int::<19>(offset as _);
+
+        if use_direct || direct {
+            let insn = Self::conditional_branch_immediate(offset as _, cond);
+            from.write_volatile(insn);
+
+            if !direct {
+                let insn = Self::nop_pseudo();
+                from.add(1).write_volatile(insn);
+            }
+        } else {
+            let insn = Self::conditional_branch_immediate(2, cond.invert());
+            from.write_volatile(insn);
+
+            Self::link_jump_or_call(BranchType::JMP, from.add(1), from_instruction.add(1), to);
+        }
+    }
+
+    pub unsafe fn link_test_and_branch(
+        direct: bool,
+        cond: Condition,
+        bit_number: usize,
+        rt: u8,
+        from: *mut i32,
+        from_instruction: *const i32,
+        to: *const u8,
+    ) {
+        let offset = (to as isize).wrapping_sub(from_instruction as isize) >> 2;
+
+        let use_direct = is_int::<14>(offset as _);
+
+        if use_direct || direct {
+            let insn = Self::test_and_branch_immediate(
+                cond == Condition::NE,
+                bit_number as _,
+                offset as _,
+                rt,
+            );
+
+            from.write_volatile(insn);
+
+            if !direct {
+                let insn = Self::nop_pseudo();
+                from.add(1).write_volatile(insn);
+            }
+        } else {
+            let insn = Self::test_and_branch_immediate(
+                cond.invert() == Condition::NE,
+                bit_number as _,
+                2,
+                rt,
+            );
+
+            from.write_volatile(insn);
+
+            Self::link_jump_or_call(BranchType::JMP, from.add(1), from_instruction.add(1), to);
+        }
+    }
+
+    pub const fn patchable_jump_size() -> usize {
+        4
+    }
+
+    pub unsafe fn set_pointer(address: *mut i32, value_ptr: *const u8, rd: u8, flush: bool) {
+        let value = value_ptr as usize as u64;
+        let mut buffer = vec![0i32; NUMBER_OF_ADDRESS_ENCODING_INSTRUCTIONS];
+        buffer[0] =
+            Self::move_wide_immediate(Datasize::D64, MoveWideOp::Z, 0, get_half_word(value, 0), rd);
+        buffer[1] =
+            Self::move_wide_immediate(Datasize::D64, MoveWideOp::K, 1, get_half_word(value, 1), rd);
+
+        if NUMBER_OF_ADDRESS_ENCODING_INSTRUCTIONS > 2 {
+            buffer[2] = Self::move_wide_immediate(
+                Datasize::D64,
+                MoveWideOp::K,
+                2,
+                get_half_word(value, 2),
+                rd,
+            );
+        }
+
+        if NUMBER_OF_ADDRESS_ENCODING_INSTRUCTIONS > 3 {
+            buffer[3] = Self::move_wide_immediate(
+                Datasize::D64,
+                MoveWideOp::K,
+                3,
+                get_half_word(value, 3),
+                rd,
+            );
+        }
+
+        core::ptr::copy_nonoverlapping(
+            buffer.as_ptr(),
+            address,
+            NUMBER_OF_ADDRESS_ENCODING_INSTRUCTIONS,
+        );
+    }
+
+    pub unsafe fn read_pointer(at: *mut u8) -> *const u8 {
+        let address = at.cast::<i32>();
+
+        let (_, _, _, imm16, rd_first) =
+            Self::disassemble_move_wide_immediate(address.cast()).unwrap();
+
+        let mut result = imm16 as usize;
+
+        let (_, _, _, imm16, rd) =
+            Self::disassemble_move_wide_immediate(address.add(1).cast()).unwrap();
+
+        result |= (imm16 as usize) << 16;
+
+        if NUMBER_OF_ADDRESS_ENCODING_INSTRUCTIONS > 2 {
+            let (_, _, _, imm16, _) =
+                Self::disassemble_move_wide_immediate(address.add(2).cast()).unwrap();
+
+            result |= (imm16 as usize) << 32;
+        }
+
+        if NUMBER_OF_ADDRESS_ENCODING_INSTRUCTIONS > 3 {
+            let (_, _, _, imm16, _) =
+                Self::disassemble_move_wide_immediate(address.add(3).cast()).unwrap();
+
+            result |= (imm16 as usize) << 48;
+        }
+
+        result as *const u8
+    }
+
+    pub unsafe fn read_call_target(from: *mut u8) -> *const u8 {
+        Self::read_pointer(
+            from.cast::<i32>()
+                .sub(1)
+                .sub(NUMBER_OF_ADDRESS_ENCODING_INSTRUCTIONS)
+                .cast(),
+        )
+    }
+
+    pub fn can_emit_jump(from: *const u8, to: *const u8) -> bool {
+        let diff = (to as isize).wrapping_sub(from as isize);
+
+        is_int::<26>(diff as _)
     }
 }
 
