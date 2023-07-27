@@ -9,7 +9,7 @@ use super::abstract_macro_assembler::{
     Jump, JumpList, Operand, Scale,
 };
 use super::arm64assembler::*;
-use super::assembler_common::{is_int, is_uint12};
+use super::assembler_common::{is_int, is_uint12, SIMDLane};
 use super::buffer::AssemblerLabel;
 
 pub struct MacroAssemblerARM64 {
@@ -80,6 +80,11 @@ pub enum DoubleCondition {
     GreaterThanOrEqualOrUnordered = Condition::HS as u8,
     LessThanOrUnordered = Condition::LT as u8,
     LessThanOrEqualOrUnordered = Condition::LE as u8,
+}
+
+pub enum ClearAttributes {
+    OKToClobberMask,
+    MustPreserveMask,
 }
 
 impl MacroAssemblerARM64 {
@@ -254,7 +259,7 @@ impl MacroAssemblerARM64 {
                 }
             }
 
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
@@ -279,7 +284,6 @@ impl MacroAssemblerARM64 {
 
                 self.store64(r, address);
             }
-
 
             (Operand::Imm32(imm), Operand::Register(dest)) => {
                 self.add64_rrr(imm, dest, dest);
@@ -318,7 +322,7 @@ impl MacroAssemblerARM64 {
             }
 
             (Operand::Address(src), Operand::Register(dest)) => {
-                let r=  self.get_cached_data_temp_register_id_and_invalidate();
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
                 self.load64(src, r);
                 self.assembler.add::<64, false>(dest, dest, r);
             }
@@ -335,17 +339,18 @@ impl MacroAssemblerARM64 {
                 self.load64(src, r);
                 self.assembler.add::<64, false>(dest, dest, r);
             }
-            _ => todo!()
+            _ => todo!(),
         }
     }
 
-
     pub fn add_zero_extend64(&mut self, src: u8, src_extend: u8, dest: u8) {
-        self.assembler.add_extend::<64, false>(dest, src, src_extend, ExtendType::UXTW, 0);
+        self.assembler
+            .add_extend::<64, false>(dest, src, src_extend, ExtendType::UXTW, 0);
     }
 
     pub fn add_sign_extend64(&mut self, src: u8, src_extend: u8, dest: u8) {
-        self.assembler.add_extend::<64, false>(dest, src, src_extend, ExtendType::SXTW, 0);
+        self.assembler
+            .add_extend::<64, false>(dest, src, src_extend, ExtendType::SXTW, 0);
     }
 
     pub fn and32_rrr(&mut self, op1: impl Into<Operand>, op2: u8, dest: u8) {
@@ -366,7 +371,7 @@ impl MacroAssemblerARM64 {
                 self.assembler.and::<32, false>(dest, op2, op1);
             }
 
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
@@ -394,7 +399,7 @@ impl MacroAssemblerARM64 {
                 self.assembler.and::<32, false>(dest, dest, src);
             }
 
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
@@ -428,7 +433,7 @@ impl MacroAssemblerARM64 {
                 self.assembler.and::<64, false>(dest, op2, op1);
             }
 
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
@@ -468,8 +473,14 @@ impl MacroAssemblerARM64 {
                 self.assembler.and::<64, false>(dest, dest, src);
             }
 
-            _ => unreachable!()
+            _ => unreachable!(),
         }
+    }
+
+    pub fn and16(&mut self, src: Address, dest: u8) {
+        let r = self.get_cached_data_temp_register_id_and_invalidate();
+        self.load16(src, r);
+        self.assembler.and::<16, false>(dest, dest, r);
     }
 
     pub fn extract_unsigned_bitfield32(&mut self, src: u8, lsb: i32, width: i32, dest: u8) {
@@ -504,11 +515,11 @@ impl MacroAssemblerARM64 {
         self.assembler.bfc::<64>(dest, lsb, width);
     }
 
-    pub fn clear_bitfield_with_mask32(&mut self, src: u8, mask: u8, dest: u8) {
+    pub fn clear_bits_with_mask32(&mut self, src: u8, mask: u8, dest: u8) {
         self.assembler.bic::<32, false>(dest, src, mask);
     }
 
-    pub fn clear_bitfield_with_mask64(&mut self, src: u8, mask: u8, dest: u8) {
+    pub fn clear_bits_with_mask64(&mut self, src: u8, mask: u8, dest: u8) {
         self.assembler.bic::<64, false>(dest, src, mask);
     }
 
@@ -518,6 +529,623 @@ impl MacroAssemblerARM64 {
 
     pub fn or_not64(&mut self, src: u8, mask: u8, dest: u8) {
         self.assembler.orn::<64>(dest, src, mask);
+    }
+
+    pub fn xor_not32(&mut self, src: u8, mask: u8, dest: u8) {
+        self.assembler.eon::<32>(dest, src, mask);
+    }
+
+    pub fn xor_not64(&mut self, src: u8, mask: u8, dest: u8) {
+        self.assembler.eon::<64>(dest, src, mask);
+    }
+
+    pub fn xor_not_left_shift32(&mut self, src: u8, mask: u8, shift: i32, dest: u8) {
+        self.assembler
+            .eon_shifted::<32>(dest, src, mask, ShiftType::LSL, shift);
+    }
+
+    pub fn xor_not_right_shift32(&mut self, src: u8, mask: u8, shift: i32, dest: u8) {
+        self.assembler
+            .eon_shifted::<32>(dest, src, mask, ShiftType::ASR, shift);
+    }
+
+    pub fn xor_not_unsigned_right_shift32(&mut self, src: u8, mask: u8, shift: i32, dest: u8) {
+        self.assembler
+            .eon_shifted::<32>(dest, src, mask, ShiftType::LSR, shift);
+    }
+
+    pub fn xor_not_left_shift64(&mut self, src: u8, mask: u8, shift: i32, dest: u8) {
+        self.assembler
+            .eon_shifted::<64>(dest, src, mask, ShiftType::LSL, shift);
+    }
+
+    pub fn xor_not_right_shift64(&mut self, src: u8, mask: u8, shift: i32, dest: u8) {
+        self.assembler
+            .eon_shifted::<64>(dest, src, mask, ShiftType::ASR, shift);
+    }
+
+    pub fn xor_not_unsigned_right_shift64(&mut self, src: u8, mask: u8, shift: i32, dest: u8) {
+        self.assembler
+            .eon_shifted::<64>(dest, src, mask, ShiftType::LSR, shift);
+    }
+
+    pub fn extract_insert_bitfield_at_lowend32(&mut self, src: u8, lsb: i32, width: i32, dest: u8) {
+        self.assembler.bfxil::<32>(dest, src, lsb, width);
+    }
+
+    pub fn extract_insert_bitfield_at_lowend64(&mut self, src: u8, lsb: i32, width: i32, dest: u8) {
+        self.assembler.bfxil::<64>(dest, src, lsb, width);
+    }
+
+    pub fn insert_signed_bitfield_in_zero32(&mut self, src: u8, lsb: i32, width: i32, dest: u8) {
+        self.assembler.sbfiz::<32>(dest, src, lsb, width);
+    }
+
+    pub fn insert_signed_bitfield_in_zero64(&mut self, src: u8, lsb: i32, width: i32, dest: u8) {
+        self.assembler.sbfiz::<64>(dest, src, lsb, width);
+    }
+
+    pub fn extract_signed_bitfield32(&mut self, src: u8, lsb: i32, width: i32, dest: u8) {
+        self.assembler.sbfx::<32>(dest, src, lsb, width);
+    }
+
+    pub fn extract_signed_bitfield64(&mut self, src: u8, lsb: i32, width: i32, dest: u8) {
+        self.assembler.sbfx::<64>(dest, src, lsb, width);
+    }
+
+    pub fn extract_register32(&mut self, n: u8, m: u8, lsb: i32, d: u8) {
+        self.assembler.extr::<32>(d, n, m, lsb);
+    }
+
+    pub fn extract_register64(&mut self, n: u8, m: u8, lsb: i32, d: u8) {
+        self.assembler.extr::<64>(d, n, m, lsb);
+    }
+
+    pub fn add_left_shift32(&mut self, n: u8, m: u8, amount: i32, d: u8) {
+        self.assembler
+            .add_shifted::<32, false>(d, n, m, ShiftType::LSL, amount);
+    }
+
+    pub fn add_left_shift64(&mut self, n: u8, m: u8, amount: i32, d: u8) {
+        self.assembler
+            .add_shifted::<64, false>(d, n, m, ShiftType::LSL, amount);
+    }
+
+    pub fn add_right_shift32(&mut self, n: u8, m: u8, amount: i32, d: u8) {
+        self.assembler
+            .add_shifted::<32, false>(d, n, m, ShiftType::ASR, amount);
+    }
+
+    pub fn add_right_shift64(&mut self, n: u8, m: u8, amount: i32, d: u8) {
+        self.assembler
+            .add_shifted::<64, false>(d, n, m, ShiftType::ASR, amount);
+    }
+
+    pub fn add_unsigned_right_shift32(&mut self, n: u8, m: u8, amount: i32, d: u8) {
+        self.assembler
+            .add_shifted::<32, false>(d, n, m, ShiftType::LSR, amount);
+    }
+
+    pub fn add_unsigned_right_shift64(&mut self, n: u8, m: u8, amount: i32, d: u8) {
+        self.assembler
+            .add_shifted::<64, false>(d, n, m, ShiftType::LSR, amount);
+    }
+
+    pub fn sub_left_shift32(&mut self, n: u8, m: u8, amount: i32, d: u8) {
+        self.assembler
+            .sub_shifted::<32, false>(d, n, m, ShiftType::LSL, amount);
+    }
+
+    pub fn sub_left_shift64(&mut self, n: u8, m: u8, amount: i32, d: u8) {
+        self.assembler
+            .sub_shifted::<64, false>(d, n, m, ShiftType::LSL, amount);
+    }
+
+    pub fn sub_right_shift32(&mut self, n: u8, m: u8, amount: i32, d: u8) {
+        self.assembler
+            .sub_shifted::<32, false>(d, n, m, ShiftType::ASR, amount);
+    }
+
+    pub fn sub_right_shift64(&mut self, n: u8, m: u8, amount: i32, d: u8) {
+        self.assembler
+            .sub_shifted::<64, false>(d, n, m, ShiftType::ASR, amount);
+    }
+
+    pub fn sub_unsigned_right_shift32(&mut self, n: u8, m: u8, amount: i32, d: u8) {
+        self.assembler
+            .sub_shifted::<32, false>(d, n, m, ShiftType::LSR, amount);
+    }
+
+    pub fn sub_unsigned_right_shift64(&mut self, n: u8, m: u8, amount: i32, d: u8) {
+        self.assembler
+            .sub_shifted::<64, false>(d, n, m, ShiftType::LSR, amount);
+    }
+
+    pub fn and_left_shift32(&mut self, n: u8, m: u8, amount: i32, d: u8) {
+        self.assembler
+            .and_shifted::<32, false>(d, n, m, ShiftType::LSL, amount);
+    }
+
+    pub fn and_left_shift64(&mut self, n: u8, m: u8, amount: i32, d: u8) {
+        self.assembler
+            .and_shifted::<64, false>(d, n, m, ShiftType::LSL, amount);
+    }
+
+    pub fn and_right_shift32(&mut self, n: u8, m: u8, amount: i32, d: u8) {
+        self.assembler
+            .and_shifted::<32, false>(d, n, m, ShiftType::ASR, amount);
+    }
+
+    pub fn and_right_shift64(&mut self, n: u8, m: u8, amount: i32, d: u8) {
+        self.assembler
+            .and_shifted::<64, false>(d, n, m, ShiftType::ASR, amount);
+    }
+
+    pub fn and_unsigned_right_shift32(&mut self, n: u8, m: u8, amount: i32, d: u8) {
+        self.assembler
+            .and_shifted::<32, false>(d, n, m, ShiftType::LSR, amount);
+    }
+
+    pub fn and_unsigned_right_shift64(&mut self, n: u8, m: u8, amount: i32, d: u8) {
+        self.assembler
+            .and_shifted::<64, false>(d, n, m, ShiftType::LSR, amount);
+    }
+
+    pub fn xor_left_shift32(&mut self, n: u8, m: u8, amount: i32, d: u8) {
+        self.assembler
+            .eor_shifted::<32>(d, n, m, ShiftType::LSL, amount);
+    }
+
+    pub fn xor_left_shift64(&mut self, n: u8, m: u8, amount: i32, d: u8) {
+        self.assembler
+            .eor_shifted::<64>(d, n, m, ShiftType::LSL, amount);
+    }
+
+    pub fn xor_right_shift32(&mut self, n: u8, m: u8, amount: i32, d: u8) {
+        self.assembler
+            .eor_shifted::<32>(d, n, m, ShiftType::ASR, amount);
+    }
+
+    pub fn xor_right_shift64(&mut self, n: u8, m: u8, amount: i32, d: u8) {
+        self.assembler
+            .eor_shifted::<64>(d, n, m, ShiftType::ASR, amount);
+    }
+
+    pub fn xor_unsigned_right_shift32(&mut self, n: u8, m: u8, amount: i32, d: u8) {
+        self.assembler
+            .eor_shifted::<32>(d, n, m, ShiftType::LSR, amount);
+    }
+
+    pub fn xor_unsigned_right_shift64(&mut self, n: u8, m: u8, amount: i32, d: u8) {
+        self.assembler
+            .eor_shifted::<64>(d, n, m, ShiftType::LSR, amount);
+    }
+
+    pub fn or_left_shift32(&mut self, n: u8, m: u8, amount: i32, d: u8) {
+        self.assembler
+            .orr_shifted::<32>(d, n, m, ShiftType::LSL, amount);
+    }
+
+    pub fn or_left_shift64(&mut self, n: u8, m: u8, amount: i32, d: u8) {
+        self.assembler
+            .orr_shifted::<64>(d, n, m, ShiftType::LSL, amount);
+    }
+
+    pub fn or_right_shift32(&mut self, n: u8, m: u8, amount: i32, d: u8) {
+        self.assembler
+            .orr_shifted::<32>(d, n, m, ShiftType::ASR, amount);
+    }
+
+    pub fn or_right_shift64(&mut self, n: u8, m: u8, amount: i32, d: u8) {
+        self.assembler
+            .orr_shifted::<64>(d, n, m, ShiftType::ASR, amount);
+    }
+
+    pub fn or_unsigned_right_shift32(&mut self, n: u8, m: u8, amount: i32, d: u8) {
+        self.assembler
+            .orr_shifted::<32>(d, n, m, ShiftType::LSR, amount);
+    }
+
+    pub fn or_unsigned_right_shift64(&mut self, n: u8, m: u8, amount: i32, d: u8) {
+        self.assembler
+            .orr_shifted::<64>(d, n, m, ShiftType::LSR, amount);
+    }
+
+    pub fn clear_bit64(&mut self, bit_to_clear: u8, dest: u8, mut scratch_for_mask: u8) {
+        if scratch_for_mask == INVALID_GPR {
+            scratch_for_mask = self.get_cached_data_temp_register_id_and_invalidate();
+        }
+
+        self.mov(1i32, scratch_for_mask);
+        self.lshift64(bit_to_clear, scratch_for_mask);
+        self.clear_bits64_with_mask(scratch_for_mask, dest);
+    }
+
+    pub fn clear_bits64_with_mask(&mut self, mask: u8, dest: u8) {
+        self.clear_bits64_with_mask_rrr(dest, mask, dest);
+    }
+
+    pub fn clear_bits64_with_mask_rrr(&mut self, src: u8, mask: u8, dest: u8) {
+        self.assembler.bic::<64, false>(dest, src, mask);
+    }
+
+    pub fn count_leading_zeros32(&mut self, src: u8, dest: u8) {
+        self.assembler.clz::<32>(dest, src);
+    }
+
+    pub fn count_leading_zeros64(&mut self, src: u8, dest: u8) {
+        self.assembler.clz::<64>(dest, src);
+    }
+
+    pub fn count_trailing_zeros32(&mut self, src: u8, dest: u8) {
+        self.assembler.rbit::<32>(dest, src);
+        self.assembler.clz::<32>(dest, dest);
+    }
+
+    pub fn count_trailing_zeros64(&mut self, src: u8, dest: u8) {
+        self.assembler.rbit::<64>(dest, src);
+        self.assembler.clz::<64>(dest, dest);
+    }
+
+    pub fn byte_swap16(&mut self, src: u8, dest: u8) {
+        self.assembler.rev16::<32>(dest, src);
+        self.zero_extend16_to_32(dest, dest);
+    }
+
+    pub fn byte_swap32(&mut self, src: u8, dest: u8) {
+        self.assembler.rev::<32>(dest, src);
+    }
+
+    pub fn byte_swap64(&mut self, src: u8, dest: u8) {
+        self.assembler.rev::<64>(dest, src);
+    }
+
+    pub fn illegal_instruction(&mut self) {
+        self.assembler.illegal_instruction();
+    }
+
+    pub fn count_population32(&mut self, src: u8, dst: u8, temp: u8) {
+        self.move32_to_float(src, temp);
+        self.assembler.vector_cnt(temp, temp, SIMDLane::I8X16);
+        self.assembler.addv(temp, temp, SIMDLane::I8X16);
+        self.move_float_to32(temp, dst);
+    }
+
+    pub fn count_population64(&mut self, src: u8, dst: u8, temp: u8) {
+        self.move64_to_float(src, temp);
+        self.assembler.vector_cnt(temp, temp, SIMDLane::I8X16);
+        self.assembler.addv(temp, temp, SIMDLane::I8X16);
+        self.move_float_to64(temp, dst);
+    }
+
+    pub fn lshift32_rrr(&mut self, src: impl Into<Operand>, shift: impl Into<Operand>, dest: u8) {
+        let src = src.into();
+        match src.into() {
+            Operand::Register(src) => match shift.into() {
+                Operand::Register(shift) => {
+                    self.assembler.lsl::<32>(dest, src, shift);
+                }
+
+                Operand::Imm32(imm) => {
+                    self.assembler.lsl_imm::<32>(dest, src, imm & 0x1f);
+                }
+
+                _ => unreachable!(),
+            },
+
+            Operand::Address(address) => {
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
+                self.load32(address, r);
+                self.lshift32_rrr(r, shift, dest);
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn lshift32(&mut self, src: impl Into<Operand>, dest: u8) {
+        match src.into() {
+            Operand::Register(src) => {
+                self.lshift32_rrr(dest, src, dest);
+            }
+
+            Operand::Imm32(imm) => {
+                self.lshift32_rrr(dest, imm, dest);
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn lshift64_rrr(&mut self, src: impl Into<Operand>, shift: impl Into<Operand>, dest: u8) {
+        let src = src.into();
+        match src.into() {
+            Operand::Register(src) => match shift.into() {
+                Operand::Register(shift) => {
+                    self.assembler.lsl::<64>(dest, src, shift);
+                }
+
+                Operand::Imm32(imm) => {
+                    self.assembler.lsl_imm::<64>(dest, src, imm & 0x3f);
+                }
+
+                _ => unreachable!(),
+            },
+
+            Operand::Address(address) => {
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
+                self.load64(address, r);
+                self.lshift64_rrr(r, shift, dest);
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn lshift64(&mut self, src: impl Into<Operand>, dest: u8) {
+        match src.into() {
+            Operand::Register(src) => {
+                self.lshift64_rrr(dest, src, dest);
+            }
+
+            Operand::Imm32(imm) => {
+                self.lshift64_rrr(dest, imm, dest);
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn mul32_rrr(&mut self, left: impl Into<Operand>, right: u8, dest: u8) {
+        match left.into() {
+            Operand::Imm32(imm) => {
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
+                self.mov(imm, r);
+                self.mul32_rrr(r, right, dest);
+            }
+
+            Operand::Register(left) => {
+                self.assembler.mul::<32>(dest, left, right);
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn mul32(&mut self, src: impl Into<Operand>, dest: u8) {
+        match src.into() {
+            Operand::Register(src) => {
+                self.mul32_rrr(src, dest, dest);
+            }
+
+            Operand::Imm32(imm) => {
+                self.mul32_rrr(imm, dest, dest);
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn mul64_rrr(&mut self, left: impl Into<Operand>, right: u8, dest: u8) {
+        match left.into() {
+            Operand::Imm32(imm) => {
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
+                self.mov(imm, r);
+                self.mul64_rrr(r, right, dest);
+            }
+
+            Operand::Register(left) => {
+                self.assembler.mul::<64>(dest, left, right);
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn multiply_add32(&mut self, mul_left: u8, mul_right: u8, summand: u8, dest: u8) {
+        self.assembler
+            .madd::<32>(dest, mul_left, mul_right, summand);
+    }
+
+    pub fn multiply_sub32(&mut self, mul_left: u8, mul_right: u8, subtrahend: u8, dest: u8) {
+        self.assembler
+            .msub::<32>(dest, mul_left, mul_right, subtrahend);
+    }
+
+    pub fn multiply_neg32(&mut self, mul_left: u8, mul_right: u8, dest: u8) {
+        self.assembler.mneg::<32>(dest, mul_left, mul_right);
+    }
+
+    pub fn multiply_add64(&mut self, mul_left: u8, mul_right: u8, summand: u8, dest: u8) {
+        self.assembler
+            .madd::<64>(dest, mul_left, mul_right, summand);
+    }
+
+    pub fn multiply_sub64(&mut self, mul_left: u8, mul_right: u8, subtrahend: u8, dest: u8) {
+        self.assembler
+            .msub::<64>(dest, mul_left, mul_right, subtrahend);
+    }
+
+    pub fn multiply_neg64(&mut self, mul_left: u8, mul_right: u8, dest: u8) {
+        self.assembler.mneg::<64>(dest, mul_left, mul_right);
+    }
+
+    pub fn multiply_add_signed_extend32(
+        &mut self,
+        mul_left: u8,
+        mul_right: u8,
+        summand: u8,
+        dest: u8,
+    ) {
+        self.assembler.smaddl(dest, mul_left, mul_right, summand);
+    }
+
+    pub fn multiply_add_zero_extend32(
+        &mut self,
+        mul_left: u8,
+        mul_right: u8,
+        summand: u8,
+        dest: u8,
+    ) {
+        self.assembler.umaddl(dest, mul_left, mul_right, summand);
+    }
+
+    pub fn multiply_sub_signed_extend32(
+        &mut self,
+        mul_left: u8,
+        mul_right: u8,
+        subtrahend: u8,
+        dest: u8,
+    ) {
+        self.assembler.smsubl(dest, mul_left, mul_right, subtrahend);
+    }
+
+    pub fn multiply_sub_zero_extend32(
+        &mut self,
+        mul_left: u8,
+        mul_right: u8,
+        subtrahend: u8,
+        dest: u8,
+    ) {
+        self.assembler.umsubl(dest, mul_left, mul_right, subtrahend);
+    }
+
+    pub fn multiply_neg_sign_extend32(&mut self, mul_left: u8, mul_right: u8, dest: u8) {
+        self.assembler.smnegl(dest, mul_left, mul_right);
+    }
+
+    pub fn multiply_neg_zero_extend32(&mut self, mul_left: u8, mul_right: u8, dest: u8) {
+        self.assembler.umnegl(dest, mul_left, mul_right);
+    }
+
+    pub fn multiply_neg_sign_extend64(&mut self, mul_left: u8, mul_right: u8, dest: u8) {
+        self.assembler.smnegl(dest, mul_left, mul_right);
+    }
+
+    pub fn multiply_neg_zero_extend64(&mut self, mul_left: u8, mul_right: u8, dest: u8) {
+        self.assembler.umnegl(dest, mul_left, mul_right);
+    }
+
+    pub fn multiply_sign_extend32(&mut self, mul_left: u8, mul_right: u8, dest: u8) {
+        self.assembler.smull(dest, mul_left, mul_right);
+    }
+
+    pub fn multiply_zero_extend32(&mut self, mul_left: u8, mul_right: u8, dest: u8) {
+        self.assembler.umull(dest, mul_left, mul_right);
+    }
+
+    pub fn div32(&mut self, dividend: u8, divisor: u8, dest: u8) {
+        self.assembler.sdiv::<32>(dest, dividend, divisor);
+    }
+
+    pub fn div64(&mut self, dividend: u8, divisor: u8, dest: u8) {
+        self.assembler.sdiv::<64>(dest, dividend, divisor);
+    }
+
+    pub fn udiv32(&mut self, dividend: u8, divisor: u8, dest: u8) {
+        self.assembler.udiv::<32>(dest, dividend, divisor);
+    }
+
+    pub fn udiv64(&mut self, dividend: u8, divisor: u8, dest: u8) {
+        self.assembler.udiv::<64>(dest, dividend, divisor);
+    }
+
+    pub fn neg32(&mut self, op: u8) {
+        self.assembler.neg::<32, false>(op, op);
+    }
+
+    pub fn neg32_rr(&mut self, src: u8, dest: u8) {
+        self.assembler.neg::<32, false>(dest, src);
+    }
+
+    pub fn neg64(&mut self, op: u8) {
+        self.assembler.neg::<64, false>(op, op);
+    }
+
+    pub fn neg64_rr(&mut self, src: u8, dest: u8) {
+        self.assembler.neg::<64, false>(dest, src);
+    }
+
+    pub fn or16(&mut self, imm: i32, address: AbsoluteAddress) {
+        let logical_imm = LogicalImmediate::create32(imm as _);
+
+        if logical_imm.is_valid() {
+            let r = self.get_cached_data_temp_register_id_and_invalidate();
+            self.load16(address, r);
+            self.assembler.orr_imm::<32>(r, r, logical_imm);
+            self.store16(r, address);
+        } else {
+            let r = self.get_cached_data_temp_register_id_and_invalidate();
+            let rm = self.get_cached_memory_temp_register_id_and_invalidate();
+            self.load16(address, rm);
+
+            self.or32_rrr(imm, Self::MEMORY_TEMP_REGISTER, r);
+            self.store16(r, address);
+        }
+    }
+
+    pub fn or32_rrr(&mut self, a: impl Into<Operand>, b: impl Into<Operand>, dest: u8) {
+        match (a.into(), b.into()) {
+            (Operand::Imm32(imm), Operand::Register(reg)) => {
+                let logical_imm = LogicalImmediate::create32(imm as _);
+
+                if logical_imm.is_valid() {
+                    self.assembler.orr_imm(dest, reg, logical_imm)
+                } else {
+                    let r = self.get_cached_data_temp_register_id_and_invalidate();
+                    self.mov(imm, r);
+                    self.assembler.orr::<32>(dest, reg, r);
+                }
+            }
+
+            (Operand::Register(a), Operand::Register(b)) => {
+                self.assembler.orr::<32>(dest, a, b);
+            }
+            _ => unreachable!("Invalid operands"),
+        }
+    }
+
+    pub fn or32(&mut self, src: impl Into<Operand>, dest: impl Into<Operand>) {
+        match (src.into(), dest.into()) {
+            (Operand::Register(src), Operand::Register(dest)) => {
+                self.or32_rrr(dest, src, dest);
+            }
+
+            (Operand::Imm32(imm), Operand::Register(dest)) => {
+                self.or32_rrr(imm, dest, dest);
+            }
+
+            (Operand::Register(src), Operand::AbsoluteAddress(dest)) => {
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
+                self.load32(dest, r);
+                self.or32_rrr(src, r, r);
+                self.store32(r, dest);
+            }
+
+            (Operand::Imm32(imm), Operand::AbsoluteAddress(dest)) => {
+                let logical_imm = LogicalImmediate::create32(imm as _);
+                if logical_imm.is_valid() {
+                    let r = self.get_cached_data_temp_register_id_and_invalidate();
+                    self.load32(dest, r);
+                    self.assembler.orr_imm::<32>(r, r, logical_imm);
+                    self.store32(r, dest);
+                } else {
+                    let r = self.get_cached_data_temp_register_id_and_invalidate();
+                    let rm = self.get_cached_memory_temp_register_id_and_invalidate();
+                    self.load32(dest, rm);
+                    self.or32_rrr(imm, Self::MEMORY_TEMP_REGISTER, r);
+                    self.store32(r, dest);
+                }
+            }
+
+            (Operand::Imm32(imm), Operand::Address(address)) => {
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
+                self.or32_rrr(imm, r, r);
+                self.store32(r, address);
+            }
+
+            _ => unreachable!("Invalid operands"),
+        }
     }
 
     pub fn mov(&mut self, src: impl Into<Operand>, dest: u8) {
@@ -569,7 +1197,7 @@ impl MacroAssemblerARM64 {
                             base,
                             address.index,
                             Self::index_extend_type(address),
-                            address.scale as _
+                            address.scale as _,
                         );
                         return;
                     }
@@ -583,7 +1211,7 @@ impl MacroAssemblerARM64 {
                     dest,
                     address.index,
                     Self::index_extend_type(address),
-                    address.scale as _
+                    address.scale as _,
                 );
             }
 
@@ -593,7 +1221,6 @@ impl MacroAssemblerARM64 {
             _ => unreachable!("Invalid operand"),
         }
     }
-    
 
     pub fn load32(&mut self, src: impl Into<Operand>, dest: u8) {
         match src.into() {
@@ -689,7 +1316,13 @@ impl MacroAssemblerARM64 {
                 let mut r = self.memory_temp_register;
                 self.move_to_cached_reg64(address.offset as _, &mut r);
                 self.memory_temp_register = r;
-                self.assembler.ldrh_extend(dest, Self::MEMORY_TEMP_REGISTER, address.base, ExtendType::UXTX, 1);
+                self.assembler.ldrh_extend(
+                    dest,
+                    Self::MEMORY_TEMP_REGISTER,
+                    address.base,
+                    ExtendType::UXTX,
+                    1,
+                );
                 if dest == Self::MEMORY_TEMP_REGISTER {
                     let mut r = self.memory_temp_register;
                     r.invalidate(self);
@@ -701,7 +1334,7 @@ impl MacroAssemblerARM64 {
                 self.load_internal::<16>(address.ptr as _, dest);
             }
 
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
@@ -797,6 +1430,73 @@ impl MacroAssemblerARM64 {
         }
     }
 
+    pub fn store16(&mut self, src: impl Into<Operand>, dest: impl Into<Operand>) {
+        let src = src.into();
+        match src {
+            Operand::Register(src) => match dest.into() {
+                Operand::Address(address) => {
+                    if self.try_store_with_offset::<16>(src, address.base, address.offset) {
+                        return;
+                    }
+                    self.get_cached_memory_temp_register_id_and_invalidate();
+                    self.sign_extend32_to_64(address.offset, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler
+                        .strh(src, address.base, Self::MEMORY_TEMP_REGISTER);
+                }
+
+                Operand::BaseIndex(address) => {
+                    if matches!(address.scale, Scale::TimesOne | Scale::TimesFour) {
+                        if let Some(base) = self.try_fold_base_and_offset_part(address) {
+                            self.assembler.strh_extend(
+                                src,
+                                base,
+                                address.index,
+                                Self::index_extend_type(address),
+                                address.scale as _,
+                            );
+                            return;
+                        }
+                    }
+
+                    let r = self.get_cached_memory_temp_register_id_and_invalidate();
+                    self.sign_extend32_to_64(address.offset, r);
+                    self.assembler.add_extend::<64, false>(
+                        r,
+                        r,
+                        address.index,
+                        Self::index_extend_type(address),
+                        address.scale as _,
+                    );
+
+                    self.assembler.strh(src, address.base, r);
+                }
+
+                Operand::AbsoluteAddress(address) => {
+                    self.store_internal::<16>(src, address.ptr as _);
+                }
+
+                _ => unreachable!(),
+            },
+
+            Operand::Imm32(imm) => match dest.into() {
+                Operand::AbsoluteAddress(address) => {
+                    if imm == 0 {
+                        self.store16(zr, address);
+                        return;
+                    }
+
+                    let mut r = self.data_temp_register;
+                    self.move_to_cached_reg32(imm, &mut r);
+                    self.data_temp_register = r;
+                    self.store16(Self::DATA_TEMP_REGISTER, address);
+                }
+
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        }
+    }
+
     pub fn store64(&mut self, src: impl Into<Operand>, dest: impl Into<Operand>) {
         match (src.into(), dest.into()) {
             (Operand::Register(src), Operand::Address(address)) => {
@@ -874,7 +1574,7 @@ impl MacroAssemblerARM64 {
                 self.data_temp_register = r;
                 self.store64(Self::DATA_TEMP_REGISTER, address);
             }
-            
+
             (Operand::Imm32(imm), Operand::Address(address)) => {
                 if imm == 0 {
                     self.store64(zr, address);

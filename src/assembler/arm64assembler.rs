@@ -3782,6 +3782,10 @@ impl ARM64Assembler {
         self.smaddl(rd, rn, rm, zr);
     }
 
+    pub fn umull(&mut self, rd: u8, rn: u8, rm: u8) {
+        self.umaddl(rd, rn, rm, zr);
+    }
+
     pub fn stp_pair_post<const DATASIZE: i32>(
         &mut self,
         rt: u8,
