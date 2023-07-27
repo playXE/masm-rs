@@ -260,8 +260,264 @@ impl MacroAssemblerARM64 {
 
     pub fn add64(&mut self, src: impl Into<Operand>, dest: impl Into<Operand>) {
         match (src.into(), dest.into()) {
+            (Operand::Imm32(imm), Operand::Address(address)) => {
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
+
+                self.load64(address, r);
+
+                if let Some((u12, shift, inverted)) = Self::try_extract_shifted_imm(imm as _) {
+                    if !inverted {
+                        self.assembler.add_imm::<64, false>(r, r, u12, shift)
+                    } else {
+                        self.assembler.sub_imm::<64, false>(r, r, u12, shift)
+                    }
+                } else {
+                    let rm = self.get_cached_memory_temp_register_id_and_invalidate();
+                    self.sign_extend32_to_64(imm, rm);
+                    self.assembler.add::<64, false>(r, r, rm);
+                }
+
+                self.store64(r, address);
+            }
+
+
+            (Operand::Imm32(imm), Operand::Register(dest)) => {
+                self.add64_rrr(imm, dest, dest);
+            }
+
+            (Operand::Imm64(imm), Operand::Register(dest)) => {
+                self.add64_rrr(imm, dest, dest);
+            }
+
+            (Operand::Register(src), Operand::Register(dest)) => {
+                if src == sp {
+                    self.assembler.add::<64, false>(dest, src, dest);
+                } else {
+                    self.assembler.add::<64, false>(dest, dest, src);
+                }
+            }
+
+            (Operand::Imm32(imm), Operand::AbsoluteAddress(address)) => {
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
+
+                self.load64(address, r);
+
+                if let Some((u12, shift, inverted)) = Self::try_extract_shifted_imm(imm as _) {
+                    if !inverted {
+                        self.assembler.add_imm::<64, false>(r, r, u12, shift)
+                    } else {
+                        self.assembler.sub_imm::<64, false>(r, r, u12, shift)
+                    }
+                } else {
+                    let rm = self.get_cached_memory_temp_register_id_and_invalidate();
+                    self.sign_extend32_to_64(imm, rm);
+                    self.assembler.add::<64, false>(r, r, rm);
+                }
+
+                self.store64(r, address);
+            }
+
+            (Operand::Address(src), Operand::Register(dest)) => {
+                let r=  self.get_cached_data_temp_register_id_and_invalidate();
+                self.load64(src, r);
+                self.assembler.add::<64, false>(dest, dest, r);
+            }
+
+            (Operand::Register(src), Operand::Address(dest)) => {
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
+                self.load64(dest, r);
+                self.assembler.add::<64, false>(r, r, src);
+                self.store64(r, dest);
+            }
+
+            (Operand::AbsoluteAddress(src), Operand::Register(dest)) => {
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
+                self.load64(src, r);
+                self.assembler.add::<64, false>(dest, dest, r);
+            }
             _ => todo!()
         }
+    }
+
+
+    pub fn add_zero_extend64(&mut self, src: u8, src_extend: u8, dest: u8) {
+        self.assembler.add_extend::<64, false>(dest, src, src_extend, ExtendType::UXTW, 0);
+    }
+
+    pub fn add_sign_extend64(&mut self, src: u8, src_extend: u8, dest: u8) {
+        self.assembler.add_extend::<64, false>(dest, src, src_extend, ExtendType::SXTW, 0);
+    }
+
+    pub fn and32_rrr(&mut self, op1: impl Into<Operand>, op2: u8, dest: u8) {
+        match op1.into() {
+            Operand::Imm32(imm) => {
+                let logical_imm = LogicalImmediate::create32(imm as _);
+                if logical_imm.is_valid() {
+                    self.assembler.and_imm::<32, false>(dest, op2, logical_imm);
+                    return;
+                }
+
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
+                self.mov(imm, r);
+                self.assembler.and::<32, false>(dest, op2, r);
+            }
+
+            Operand::Register(op1) => {
+                self.assembler.and::<32, false>(dest, op2, op1);
+            }
+
+            _ => unreachable!()
+        }
+    }
+
+    pub fn and32(&mut self, src: impl Into<Operand>, dest: u8) {
+        match src.into() {
+            Operand::Address(address) => {
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
+                self.load32(address, r);
+                self.assembler.and::<32, false>(dest, dest, r);
+            }
+
+            Operand::Imm32(imm) => {
+                let logical_imm = LogicalImmediate::create32(imm as _);
+                if logical_imm.is_valid() {
+                    self.assembler.and_imm::<32, false>(dest, dest, logical_imm);
+                    return;
+                }
+
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
+                self.mov(imm, r);
+                self.assembler.and::<32, false>(dest, dest, r);
+            }
+
+            Operand::Register(src) => {
+                self.assembler.and::<32, false>(dest, dest, src);
+            }
+
+            _ => unreachable!()
+        }
+    }
+
+    pub fn and64_rrr(&mut self, op1: impl Into<Operand>, op2: u8, dest: u8) {
+        match op1.into() {
+            Operand::Imm64(imm) => {
+                let logical_imm = LogicalImmediate::create64(imm as _);
+                if logical_imm.is_valid() {
+                    self.assembler.and_imm::<64, false>(dest, op2, logical_imm);
+                    return;
+                }
+
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
+                self.mov(imm, r);
+                self.assembler.and::<64, false>(dest, op2, r);
+            }
+
+            Operand::Imm32(imm) => {
+                let logical_imm = LogicalImmediate::create64(imm as _);
+                if logical_imm.is_valid() {
+                    self.assembler.and_imm::<64, false>(dest, op2, logical_imm);
+                    return;
+                }
+
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
+                self.sign_extend32_to_64(imm, r);
+                self.assembler.and::<64, false>(dest, op2, r);
+            }
+
+            Operand::Register(op1) => {
+                self.assembler.and::<64, false>(dest, op2, op1);
+            }
+
+            _ => unreachable!()
+        }
+    }
+
+    pub fn and64(&mut self, src: impl Into<Operand>, dest: u8) {
+        match src.into() {
+            Operand::Address(address) => {
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
+                self.load64(address, r);
+                self.assembler.and::<64, false>(dest, dest, r);
+            }
+
+            Operand::Imm64(imm) => {
+                let logical_imm = LogicalImmediate::create64(imm as _);
+                if logical_imm.is_valid() {
+                    self.assembler.and_imm::<64, false>(dest, dest, logical_imm);
+                    return;
+                }
+
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
+                self.mov(imm, r);
+                self.assembler.and::<64, false>(dest, dest, r);
+            }
+
+            Operand::Imm32(imm) => {
+                let logical_imm = LogicalImmediate::create64(imm as _);
+                if logical_imm.is_valid() {
+                    self.assembler.and_imm::<64, false>(dest, dest, logical_imm);
+                    return;
+                }
+
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
+                self.sign_extend32_to_64(imm, r);
+                self.assembler.and::<64, false>(dest, dest, r);
+            }
+
+            Operand::Register(src) => {
+                self.assembler.and::<64, false>(dest, dest, src);
+            }
+
+            _ => unreachable!()
+        }
+    }
+
+    pub fn extract_unsigned_bitfield32(&mut self, src: u8, lsb: i32, width: i32, dest: u8) {
+        self.assembler.ubfx::<32>(dest, src, lsb, width);
+    }
+
+    pub fn extract_unsigned_bitfield64(&mut self, src: u8, lsb: i32, width: i32, dest: u8) {
+        self.assembler.ubfx::<64>(dest, src, lsb, width);
+    }
+
+    pub fn extract_unsigned_bitfield_in_zero32(&mut self, src: u8, lsb: i32, width: i32, dest: u8) {
+        self.assembler.ubfiz::<32>(dest, src, lsb, width);
+    }
+
+    pub fn extract_unsigned_bitfield_in_zero64(&mut self, src: u8, lsb: i32, width: i32, dest: u8) {
+        self.assembler.ubfiz::<64>(dest, src, lsb, width);
+    }
+
+    pub fn insert_bitfield32(&mut self, src: u8, lsb: i32, width: i32, dest: u8) {
+        self.assembler.bfi::<32>(dest, src, lsb, width);
+    }
+
+    pub fn insert_bitfield64(&mut self, src: u8, lsb: i32, width: i32, dest: u8) {
+        self.assembler.bfi::<64>(dest, src, lsb, width);
+    }
+
+    pub fn clear_bitfield32(&mut self, lsb: i32, width: i32, dest: u8) {
+        self.assembler.bfc::<32>(dest, lsb, width);
+    }
+
+    pub fn clear_bitfield64(&mut self, lsb: i32, width: i32, dest: u8) {
+        self.assembler.bfc::<64>(dest, lsb, width);
+    }
+
+    pub fn clear_bitfield_with_mask32(&mut self, src: u8, mask: u8, dest: u8) {
+        self.assembler.bic::<32, false>(dest, src, mask);
+    }
+
+    pub fn clear_bitfield_with_mask64(&mut self, src: u8, mask: u8, dest: u8) {
+        self.assembler.bic::<64, false>(dest, src, mask);
+    }
+
+    pub fn or_not32(&mut self, src: u8, mask: u8, dest: u8) {
+        self.assembler.orn::<32>(dest, src, mask);
+    }
+
+    pub fn or_not64(&mut self, src: u8, mask: u8, dest: u8) {
+        self.assembler.orn::<64>(dest, src, mask);
     }
 
     pub fn mov(&mut self, src: impl Into<Operand>, dest: u8) {
@@ -293,6 +549,51 @@ impl MacroAssemblerARM64 {
             _ => unreachable!("Invalid operand"),
         }
     }
+
+    pub fn load64(&mut self, src: impl Into<Operand>, dest: u8) {
+        match src.into() {
+            Operand::Address(address) => {
+                if self.try_load_with_offset::<64>(dest, address.base, address.offset) {
+                    return;
+                }
+                let r = self.get_cached_memory_temp_register_id_and_invalidate();
+                self.sign_extend32_to_64(address.offset, r);
+                self.assembler.ldr::<64>(dest, address.base, r);
+            }
+
+            Operand::BaseIndex(address) => {
+                if address.scale == Scale::TimesOne || address.scale == Scale::TimesFour {
+                    if let Some(base) = self.try_fold_base_and_offset_part(address) {
+                        self.assembler.ldr_extend::<64>(
+                            dest,
+                            base,
+                            address.index,
+                            Self::index_extend_type(address),
+                            address.scale as _
+                        );
+                        return;
+                    }
+                }
+
+                let r = self.get_cached_memory_temp_register_id_and_invalidate();
+                self.sign_extend32_to_64(address.offset, r);
+                self.assembler.ldr::<64>(dest, address.base, r);
+                self.assembler.ldr_extend::<64>(
+                    dest,
+                    dest,
+                    address.index,
+                    Self::index_extend_type(address),
+                    address.scale as _
+                );
+            }
+
+            Operand::AbsoluteAddress(address) => {
+                self.load_internal::<64>(address.ptr as _, dest);
+            }
+            _ => unreachable!("Invalid operand"),
+        }
+    }
+    
 
     pub fn load32(&mut self, src: impl Into<Operand>, dest: u8) {
         match src.into() {
@@ -345,6 +646,62 @@ impl MacroAssemblerARM64 {
             }
 
             _ => unreachable!(),
+        }
+    }
+
+    pub fn load16(&mut self, src: impl Into<Operand>, dest: u8) {
+        match src.into() {
+            Operand::Address(address) => {
+                if self.try_load_with_offset::<16>(dest, address.base, address.offset) {
+                    return;
+                }
+                let r = self.get_cached_memory_temp_register_id_and_invalidate();
+                self.sign_extend32_to_64(address.offset, r);
+                self.assembler.ldr::<16>(dest, address.base, r);
+            }
+
+            Operand::BaseIndex(address) => {
+                if address.scale == Scale::TimesOne || address.scale == Scale::TimesFour {
+                    if let Some(base) = self.try_fold_base_and_offset_part(address) {
+                        self.assembler.ldr_extend::<16>(
+                            dest,
+                            base,
+                            address.index,
+                            Self::index_extend_type(address),
+                            address.scale as _,
+                        );
+                        return;
+                    }
+                }
+                let r = self.get_cached_memory_temp_register_id_and_invalidate();
+                self.sign_extend32_to_64(address.offset, r);
+                self.assembler.add_extend::<64, false>(
+                    r,
+                    r,
+                    address.index,
+                    Self::index_extend_type(address),
+                    address.scale as _,
+                );
+                self.assembler.ldr::<16>(dest, address.base, r);
+            }
+
+            Operand::ExtendedAddress(address) => {
+                let mut r = self.memory_temp_register;
+                self.move_to_cached_reg64(address.offset as _, &mut r);
+                self.memory_temp_register = r;
+                self.assembler.ldrh_extend(dest, Self::MEMORY_TEMP_REGISTER, address.base, ExtendType::UXTX, 1);
+                if dest == Self::MEMORY_TEMP_REGISTER {
+                    let mut r = self.memory_temp_register;
+                    r.invalidate(self);
+                    self.memory_temp_register = r;
+                }
+            }
+
+            Operand::AbsoluteAddress(address) => {
+                self.load_internal::<16>(address.ptr as _, dest);
+            }
+
+            _ => unreachable!()
         }
     }
 
@@ -434,6 +791,124 @@ impl MacroAssemblerARM64 {
             (Operand::Register(src), Operand::PostIndexAddress(dest)) => {
                 self.assembler
                     .str_post::<32>(src, dest.base, PostIndex(dest.index));
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn store64(&mut self, src: impl Into<Operand>, dest: impl Into<Operand>) {
+        match (src.into(), dest.into()) {
+            (Operand::Register(src), Operand::Address(address)) => {
+                if self.try_store_with_offset::<64>(src, address.base, address.offset) {
+                    return;
+                }
+
+                let r = self.get_cached_memory_temp_register_id_and_invalidate();
+                self.assembler.str::<64>(src, address.base, r);
+                self.sign_extend32_to_64(address.offset, r);
+            }
+
+            (Operand::Register(src), Operand::BaseIndex(address)) => {
+                if matches!(address.scale, Scale::TimesOne | Scale::TimesFour) {
+                    if let Some(base) = self.try_fold_base_and_offset_part(address) {
+                        self.assembler.str_extend::<64>(
+                            src,
+                            base,
+                            address.index,
+                            Self::index_extend_type(address),
+                            address.scale as _,
+                        );
+                        return;
+                    }
+                }
+
+                let r = self.get_cached_memory_temp_register_id_and_invalidate();
+                self.assembler.str::<64>(src, address.base, r);
+                self.sign_extend32_to_64(address.offset, r);
+                self.assembler.add_extend::<64, false>(
+                    r,
+                    r,
+                    address.index,
+                    Self::index_extend_type(address),
+                    address.scale as _,
+                );
+            }
+
+            (Operand::Register(src), Operand::AbsoluteAddress(address)) => {
+                self.store_internal::<64>(src, address.ptr as _);
+            }
+
+            (Operand::Imm64(imm), Operand::Address(address)) => {
+                if imm == 0 {
+                    self.store64(zr, address);
+                    return;
+                }
+
+                let mut r = self.data_temp_register;
+                self.move_to_cached_reg64(imm, &mut r);
+                self.data_temp_register = r;
+                self.store64(Self::DATA_TEMP_REGISTER, address);
+            }
+
+            (Operand::Imm64(imm), Operand::BaseIndex(address)) => {
+                if imm == 0 {
+                    self.store64(zr, address);
+                    return;
+                }
+
+                let mut r = self.data_temp_register;
+                self.move_to_cached_reg64(imm, &mut r);
+                self.data_temp_register = r;
+                self.store64(Self::DATA_TEMP_REGISTER, address);
+            }
+
+            (Operand::Imm64(imm), Operand::AbsoluteAddress(address)) => {
+                if imm == 0 {
+                    self.store64(zr, address);
+                    return;
+                }
+
+                let mut r = self.data_temp_register;
+                self.move_to_cached_reg64(imm, &mut r);
+                self.data_temp_register = r;
+                self.store64(Self::DATA_TEMP_REGISTER, address);
+            }
+            
+            (Operand::Imm32(imm), Operand::Address(address)) => {
+                if imm == 0 {
+                    self.store64(zr, address);
+                    return;
+                }
+
+                let mut r = self.data_temp_register;
+                self.move_to_cached_reg32(imm, &mut r);
+                self.data_temp_register = r;
+                self.store64(Self::DATA_TEMP_REGISTER, address);
+            }
+
+            (Operand::Imm32(imm), Operand::BaseIndex(address)) => {
+                if imm == 0 {
+                    self.store64(zr, address);
+                    return;
+                }
+
+                let mut r = self.data_temp_register;
+                self.move_to_cached_reg32(imm, &mut r);
+                self.data_temp_register = r;
+                self.store64(Self::DATA_TEMP_REGISTER, address);
+            }
+
+            (Operand::Imm32(imm), Operand::AbsoluteAddress(address)) => {
+                if imm == 0 {
+                    self.store64(zr, address);
+                    return;
+                }
+
+                let mut r = self.data_temp_register;
+                self.move_to_cached_reg32(imm, &mut r);
+                self.data_temp_register = r;
+                self.store64(Self::DATA_TEMP_REGISTER, address);
             }
 
             _ => unreachable!(),
