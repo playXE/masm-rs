@@ -547,11 +547,11 @@ pub fn can_encode_fp_imm(d: f64) -> bool {
     masked == 0x3fc0000000000000 || masked == 0x4000000000000000
 }
 
-const fn can_encode_pimm_offset<const DATASIZE: i32>(offset: i32) -> bool {
+pub const fn can_encode_pimm_offset<const DATASIZE: i32>(offset: i32) -> bool {
     is_valid_scaled_uimm12::<DATASIZE>(offset)
 }
 
-const fn can_encode_simm_offset(offset: i32) -> bool {
+pub const fn can_encode_simm_offset(offset: i32) -> bool {
     is_valid_signed_imm9(offset)
 }
 
@@ -2297,7 +2297,7 @@ impl ARM64Assembler {
         ));
     }
 
-    pub fn ldrub(&mut self, rt: u8, rn: u8, simm: i32) {
+    pub fn ldurb(&mut self, rt: u8, rn: u8, simm: i32) {
         self.insn(Self::load_store_register_unscaled_immediate_gp(
             MemOpSize::M8Or128,
             false,
@@ -4067,17 +4067,15 @@ impl ARM64Assembler {
         ));
     }
 
-    pub fn strub(&mut self, rt: u8, rn: u8, rm: u8) {
-        self.insn(Self::load_store_register_offset_gp(
+    pub fn sturb(&mut self, rt: u8, rn: u8, simm: i32) {
+        self.insn(Self::load_store_register_unscaled_immediate_gp(
             MemOpSize::M8Or128,
             false,
-            MemOp::STORE,
-            rm,
-            ExtendType::UXTW,
-            false,
+            MemOp::LOAD,
+            simm,
             rn,
             rt,
-        ))
+        ));
     }
 
     pub fn sturh(&mut self, rt: u8, rn: u8, simm: i32) {
@@ -4163,6 +4161,10 @@ impl ARM64Assembler {
 
     pub fn sxth<const DATASIZE: i32>(&mut self, rd: u8, rn: u8) {
         self.sbfm::<DATASIZE>(rd, rn, 0, 15);
+    }
+
+    pub fn sxtw(&mut self, rd: u8, rn: u8) {
+        self.sbfm::<64>(rd, rn, 0, 31);
     }
 
     pub fn tbz(&mut self, rt: u8, imm: i32, mut offset: i32) {

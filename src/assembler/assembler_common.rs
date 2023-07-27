@@ -10,6 +10,10 @@ pub const fn is_int<const BITS: usize>(t: i32) -> bool {
     t == ((t << (32 - BITS)) >> (32 - BITS))
 }
 
+pub const fn is_int_isize<const BITS: usize>(t: isize) -> bool {
+    t == ((t << (64 - BITS)) >> (64 - BITS))
+}
+
 pub const fn is_valid_scaled_uimm12<const DATASIZE: i32>(offset: i32) -> bool {
     let max_pimm = 4095 * (DATASIZE / 8);
 

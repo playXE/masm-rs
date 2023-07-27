@@ -154,6 +154,18 @@ impl PreIndexAddress {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+pub struct PostIndexAddress {
+    pub base: u8,
+    pub index: i32,
+}
+
+impl PostIndexAddress {
+    pub const fn new(base: u8, index: i32) -> Self {
+        Self { base, index }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 pub struct AbsoluteAddress {
     pub ptr: *const u8,
 }
@@ -170,6 +182,7 @@ pub enum Operand {
     ExtendedAddress(ExtendedAddress),
     BaseIndex(BaseIndex),
     PreIndexAddress(PreIndexAddress),
+    PostIndexAddress(PostIndexAddress),
     AbsoluteAddress(AbsoluteAddress),
     Register(u8),
     Imm32(i32),
@@ -617,6 +630,7 @@ pub struct AbstractMacroAssembler {
     pub assembler: TargetAssembler,
     pub link_tasks: Vec<Box<dyn FnOnce(&mut LinkBuffer)>>,
     pub late_link_tasks: Vec<Box<dyn FnOnce(&mut LinkBuffer)>>,
+    pub temp_register_valid_bits: usize,
     pub comments: Vec<(Label, Cow<'static, str>)>,
 }
 
@@ -741,11 +755,27 @@ impl AbstractMacroAssembler {
             link_tasks: Vec::new(),
             late_link_tasks: Vec::new(),
             comments: Vec::new(),
+            temp_register_valid_bits: 0
         }
     }
 
     pub fn pad_before_patch(&mut self) {
         let _ = self.label();
+    }
+
+    pub fn clear_temp_register_valid(&mut self, bit: usize) {
+        self.temp_register_valid_bits &= !bit;
+    }
+    
+    pub fn set_temp_register_valid(&mut self, bit: usize) {
+        self.temp_register_valid_bits |= bit;
+    }
+    pub fn is_temp_register_valid(&self, bit: usize) -> bool {
+        (self.temp_register_valid_bits & bit) != 0
+    }
+
+    pub fn invalidate_all_temp_registers(&mut self) {
+        self.temp_register_valid_bits = 0;
     }
 }
 
@@ -799,5 +829,48 @@ impl Into<Location> for DataLabelCompact {
 impl Into<Location> for ConvertibleLoadLabel {
     fn into(self) -> Location {
         Location::ConvertibleLoadLabel(self)
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct CachedTempRegister {
+    pub register_id: u8,
+    pub value: isize,
+    pub valid_bit: usize 
+}
+
+impl CachedTempRegister {
+    pub fn register_id_invalidate(&mut self, masm: &mut TargetMacroAssembler) -> u8 {
+        self.invalidate(masm);
+        self.register_id
+    }
+
+    pub fn register_id_no_invalidate(&mut self) -> u8 {
+        self.register_id
+    }
+
+    pub fn value(&self, masm: &TargetMacroAssembler) -> Option<isize> {
+        if masm.is_temp_register_valid(self.valid_bit) {
+            Some(self.value)
+        } else {
+            None
+        }
+    }
+
+    pub fn set_value(&mut self, masm: &mut TargetMacroAssembler, value: isize) {
+        self.value = value;
+        masm.set_temp_register_valid(self.valid_bit);
+    }
+
+    pub fn invalidate(&mut self, masm: &mut TargetMacroAssembler) {
+        masm.clear_temp_register_valid(self.valid_bit);
+    }
+
+    pub fn new(register_id: u8) -> Self {
+        Self {
+            register_id,
+            value: 0,
+            valid_bit: 1 << register_id as usize
+        }
     }
 }
