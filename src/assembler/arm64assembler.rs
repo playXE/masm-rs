@@ -2,7 +2,7 @@
 use crate::assembler::assembler_common::{is_int, is_int9, is_uint12};
 use std::{
     mem::{size_of, transmute},
-    ops::{Deref, DerefMut}, default,
+    ops::{Deref, DerefMut},
 };
 
 use super::{
@@ -1185,7 +1185,7 @@ impl ARM64Assembler {
         typ: JumpType,
         cond: Condition,
         is_64bit: bool,
-        compare_register: u8 
+        compare_register: u8,
     ) {
         self.jumps_to_link.push(LinkRecord::new_cmp(
             from.offset() as _,
@@ -1380,6 +1380,9 @@ impl ARM64Assembler {
         self.asrv::<DATASIZE>(rd, rn, rm);
     }
 
+    pub fn asr_imm<const DATASIZE: i32>(&mut self, rd: u8, rn: u8, shift: i32) {
+        self.sbfm::<DATASIZE>(rd, rn, shift, DATASIZE - 1);
+    }
     pub fn b(&mut self) {
         self.insn(Self::unconditional_branch_immediate(false, 0))
     }
@@ -1806,9 +1809,9 @@ impl ARM64Assembler {
         ))
     }
 
-    pub fn ldnp(&mut self, rt: u8, rt2: u8, rn: u8, imm: i32) {
+    pub fn ldnp<const DATASIZE: i32>(&mut self, rt: u8, rt2: u8, rn: u8, imm: i32) {
         self.insn(Self::load_store_register_pair_non_temporal_gp(
-            mem_pair_op_size(64),
+            mem_pair_op_size(DATASIZE),
             true,
             MemOp::LOAD,
             imm,
@@ -3854,7 +3857,7 @@ impl ARM64Assembler {
         simm: PairPostIndex,
     ) {
         self.insn(Self::load_store_register_pair_post_index(
-            mem_pair_op_size(DATASIZE),
+            mem_pair_op_size_fp(DATASIZE),
             false,
             MemOp::STORE,
             simm.0,
@@ -3872,7 +3875,7 @@ impl ARM64Assembler {
         simm: PairPreIndex,
     ) {
         self.insn(Self::load_store_register_pair_pre_index(
-            mem_pair_op_size(DATASIZE),
+            mem_pair_op_size_fp(DATASIZE),
             true,
             MemOp::STORE,
             simm.0,
@@ -3884,8 +3887,20 @@ impl ARM64Assembler {
 
     pub fn stnp_pair_fp<const DATASIZE: i32>(&mut self, rt: u8, rt2: u8, rn: u8, simm: i32) {
         self.insn(Self::load_store_register_pair_non_temporal(
-            mem_pair_op_size(DATASIZE),
+            mem_pair_op_size_fp(DATASIZE),
             false,
+            MemOp::STORE,
+            simm,
+            rn,
+            rt,
+            rt2,
+        ))
+    }
+
+    pub fn stp_pair_fp<const DATASIZE: i32>(&mut self, rt: u8, rt2: u8, rn: u8, simm: i32) {
+        self.insn(Self::load_store_register_pair_offset(
+            mem_pair_op_size_fp(DATASIZE),
+            true,
             MemOp::STORE,
             simm,
             rn,
@@ -4737,6 +4752,15 @@ impl ARM64Assembler {
         self.insn(Self::floating_point_data_processing_1_source(
             datasize(DATASIZE),
             FPDataOp1Source::FRINTX,
+            vn,
+            vd,
+        ));
+    }
+
+    pub fn frintz<const DATASIZE: i32>(&mut self, vd: u8, vn: u8) {
+        self.insn(Self::floating_point_data_processing_1_source(
+            datasize(DATASIZE),
+            FPDataOp1Source::FRINTZ,
             vn,
             vd,
         ));

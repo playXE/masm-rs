@@ -984,6 +984,7 @@ impl MacroAssemblerX86Common {
             self.load64(Address::new(src, offset + 8), dest2);
         }
     }
+    
 
     pub fn load64_with_address_offset_patch(&mut self, address: Address, dest: u8) -> DataLabel32 {
         self.pad_before_patch();
