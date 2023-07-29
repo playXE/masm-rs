@@ -819,10 +819,10 @@ impl MacroAssemblerARM64 {
     }
 
     pub fn count_population64(&mut self, src: u8, dst: u8, temp: u8) {
-        self.move64_to_float(src, temp);
+        self.move64_to_double(src, temp);
         self.assembler.vector_cnt(temp, temp, SIMDLane::I8X16);
         self.assembler.addv(temp, temp, SIMDLane::I8X16);
-        self.move_float_to64(temp, dst);
+        self.move_double_to64(temp, dst);
     }
 
     pub fn lshift32_rrr(&mut self, src: impl Into<Operand>, shift: impl Into<Operand>, dest: u8) {
@@ -1918,6 +1918,18 @@ impl MacroAssemblerARM64 {
         }
     }
 
+    pub fn zero_extend16_to_32(&mut self, src: u8, dest: u8) {
+        self.and32_rrr(0xffffi32, src, dest);
+    }
+
+    pub fn signed_extend16_to_32(&mut self, src: u8, dest: u8) {
+        self.assembler.sxth(dest, src);
+    }
+
+    pub fn zero_extend16_to_64(&mut self, src: u8, dest: u8) {
+        self.and64_rrr(0xffffi32, src, dest);
+    }
+
     pub fn load8(&mut self, address: impl Into<Operand>, dest: u8) {
         match address.into() {
             Operand::Address(address) => {
@@ -2757,29 +2769,1263 @@ impl MacroAssemblerARM64 {
     /// If the result is not representable as a 32 bit value, branch.
     /// May also branch for some values that are representable in 32 bits
     /// (specifically, in this case, 0).
-    pub fn branch_convert_double_to_int32(&mut self, src: u8, dest: u8, jumps: &mut JumpList, _: u8, neg_zero_check: bool) {
+    pub fn branch_convert_double_to_int32(
+        &mut self,
+        src: u8,
+        dest: u8,
+        jumps: &mut JumpList,
+        _: u8,
+        neg_zero_check: bool,
+    ) {
         self.assembler.fcvtns::<32, 64>(dest, src);
         self.assembler.scvtf::<64, 32>(Self::FP_TEMP_REGISTER, dest);
 
-        jumps.push(self.branch_double(DoubleCondition::NotEqualOrUnordered, src, Self::FP_TEMP_REGISTER));
+        jumps.push(self.branch_double(
+            DoubleCondition::NotEqualOrUnordered,
+            src,
+            Self::FP_TEMP_REGISTER,
+        ));
 
         if neg_zero_check {
             let value_is_non_zero = self.branch_test32(ResultCondition::NonZero, dest);
             let scratch = self.get_cached_memory_temp_register_id_and_invalidate();
             self.assembler.fmov::<64>(scratch, dest);
-            
+            jumps.push(self.make_test_bit_and_branch(scratch, 63, ZeroCondition::IsNotZero));
+            value_is_non_zero.link(self);
         }
     }
-    
 
     pub fn branch_double(&mut self, cond: DoubleCondition, left: u8, right: u8) -> Jump {
         self.assembler.fcmp::<64>(left, right);
         self.jump_after_floating_point_compare(cond)
     }
 
-    pub fn branch_float(&mut self, cond: FloatCondition, left: u8, right: u8) -> Jump {
+    pub fn branch_float(&mut self, cond: DoubleCondition, left: u8, right: u8) -> Jump {
         self.assembler.fcmp::<32>(left, right);
         self.jump_after_floating_point_compare(cond)
+    }
+
+    pub fn branch_double_with_zero(&mut self, cond: DoubleCondition, left: u8) -> Jump {
+        self.assembler.fcmp_0::<64>(left);
+        self.jump_after_floating_point_compare(cond)
+    }
+
+    pub fn branch_float_with_zero(&mut self, cond: DoubleCondition, left: u8) -> Jump {
+        self.assembler.fcmp_0::<32>(left);
+        self.jump_after_floating_point_compare(cond)
+    }
+
+    pub fn compare_double(&mut self, cond: DoubleCondition, left: u8, right: u8, dest: u8) {
+        self.floating_point_compare(cond, dest, |this| {
+            this.assembler.fcmp::<64>(left, right);
+        })
+    }
+
+    pub fn compare_float(&mut self, cond: DoubleCondition, left: u8, right: u8, dest: u8) {
+        self.floating_point_compare(cond, dest, |this| {
+            this.assembler.fcmp::<32>(left, right);
+        })
+    }
+
+    pub fn compare_double_with_zero(&mut self, cond: DoubleCondition, left: u8, dest: u8) {
+        self.floating_point_compare(cond, dest, |this| {
+            this.assembler.fcmp_0::<64>(left);
+        })
+    }
+
+    pub fn compare_float_with_zero(&mut self, cond: DoubleCondition, left: u8, dest: u8) {
+        self.floating_point_compare(cond, dest, |this| {
+            this.assembler.fcmp_0::<32>(left);
+        })
+    }
+
+    pub fn branch_double_non_zero(&mut self, reg: u8, _: u8) -> Jump {
+        self.assembler.fcmp_0::<64>(reg);
+        let unordered = self.make_branch(Condition::VS);
+        let result = self.make_branch(Condition::NE);
+        unordered.link(self);
+        result
+    }
+
+    pub fn branch_double_zero_or_nan(&mut self, reg: u8, _: u8) -> Jump {
+        self.assembler.fcmp_0::<64>(reg);
+        let unordered = self.make_branch(Condition::VS);
+        let not_equal = self.make_branch(Condition::NE);
+        unordered.link(self);
+        let result = self.jump();
+        not_equal.link(self);
+        result
+    }
+
+    pub fn branch_truncate_double_to_int32(
+        &mut self,
+        src: u8,
+        dest: u8,
+        branch_type: BranchTruncateType,
+    ) -> Jump {
+        let r = self.get_cached_data_temp_register_id_and_invalidate();
+        self.assembler.fcvtzs::<64, 64>(r, src);
+        self.zero_extend32_to_word(r, dest);
+        self.assembler.cmp_extend::<64>(r, r, ExtendType::SXTW, 0);
+        self.make_branch_rel(
+            if branch_type == BranchTruncateType::BranchIfTruncateSucceeded {
+                RelationalCondition::Equal
+            } else {
+                RelationalCondition::NotEqual
+            },
+        )
+    }
+
+    pub fn convert_double_to_float(&mut self, src: u8, dest: u8) {
+        self.assembler.fcvt::<32, 64>(dest, src);
+    }
+
+    pub fn convert_float_to_double(&mut self, src: u8, dest: u8) {
+        self.assembler.fcvt::<64, 32>(dest, src);
+    }
+
+    pub fn convert_int32_to_double(&mut self, src: impl Into<Operand>, dest: u8) {
+        match src.into() {
+            Operand::Register(r) => {
+                self.assembler.scvtf::<64, 32>(dest, r);
+            }
+
+            Operand::Imm32(imm) => {
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
+                self.mov(imm, r);
+                self.assembler.scvtf::<64, 32>(dest, r);
+            }
+
+            Operand::Address(address) => {
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
+                self.load32(address, r);
+                self.assembler.scvtf::<64, 32>(dest, r);
+            }
+
+            Operand::AbsoluteAddress(address) => {
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
+                self.load32(address, r);
+                self.assembler.scvtf::<64, 32>(dest, r);
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn convert_int32_to_float(&mut self, src: impl Into<Operand>, dest: u8) {
+        match src.into() {
+            Operand::Register(r) => {
+                self.assembler.scvtf::<32, 32>(dest, r);
+            }
+
+            Operand::Imm32(imm) => {
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
+                self.mov(imm, r);
+                self.assembler.scvtf::<32, 32>(dest, r);
+            }
+
+            Operand::Address(address) => {
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
+                self.load32(address, r);
+                self.assembler.scvtf::<32, 32>(dest, r);
+            }
+
+            Operand::AbsoluteAddress(address) => {
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
+                self.load32(address, r);
+                self.assembler.scvtf::<32, 32>(dest, r);
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn convert_int64_to_double(&mut self, src: impl Into<Operand>, dest: u8) {
+        match src.into() {
+            Operand::Register(r) => {
+                self.assembler.scvtf::<64, 64>(dest, r);
+            }
+
+            Operand::Imm64(imm) => {
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
+                self.mov(imm, r);
+                self.assembler.scvtf::<64, 64>(dest, r);
+            }
+
+            Operand::Address(address) => {
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
+                self.load64(address, r);
+                self.assembler.scvtf::<64, 64>(dest, r);
+            }
+
+            Operand::AbsoluteAddress(address) => {
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
+                self.load64(address, r);
+                self.assembler.scvtf::<64, 64>(dest, r);
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn convert_int64_to_float(&mut self, src: impl Into<Operand>, dest: u8) {
+        match src.into() {
+            Operand::Register(r) => {
+                self.assembler.scvtf::<32, 64>(dest, r);
+            }
+
+            Operand::Imm64(imm) => {
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
+                self.mov(imm, r);
+                self.assembler.scvtf::<32, 64>(dest, r);
+            }
+
+            Operand::Address(address) => {
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
+                self.load64(address, r);
+                self.assembler.scvtf::<32, 64>(dest, r);
+            }
+
+            Operand::AbsoluteAddress(address) => {
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
+                self.load64(address, r);
+                self.assembler.scvtf::<32, 64>(dest, r);
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn convert_uint64_to_double(&mut self, src: impl Into<Operand>, dest: u8) {
+        match src.into() {
+            Operand::Register(r) => {
+                self.assembler.ucvtf::<64, 64>(dest, r);
+            }
+
+            Operand::Imm64(imm) => {
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
+                self.mov(imm, r);
+                self.assembler.ucvtf::<64, 64>(dest, r);
+            }
+
+            Operand::Address(address) => {
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
+                self.load64(address, r);
+                self.assembler.ucvtf::<64, 64>(dest, r);
+            }
+
+            Operand::AbsoluteAddress(address) => {
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
+                self.load64(address, r);
+                self.assembler.ucvtf::<64, 64>(dest, r);
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn convert_uint64_to_float(&mut self, src: impl Into<Operand>, dest: u8) {
+        match src.into() {
+            Operand::Register(r) => {
+                self.assembler.ucvtf::<32, 64>(dest, r);
+            }
+
+            Operand::Imm64(imm) => {
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
+                self.mov(imm, r);
+                self.assembler.ucvtf::<32, 64>(dest, r);
+            }
+
+            Operand::Address(address) => {
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
+                self.load64(address, r);
+                self.assembler.ucvtf::<32, 64>(dest, r);
+            }
+
+            Operand::AbsoluteAddress(address) => {
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
+                self.load64(address, r);
+                self.assembler.ucvtf::<32, 64>(dest, r);
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn div_double(&mut self, op1: u8, op2: u8, dest: u8) {
+        self.assembler.fdiv::<64>(dest, op1, op2);
+    }
+
+    pub fn div_float(&mut self, op1: u8, op2: u8, dest: u8) {
+        self.assembler.fdiv::<32>(dest, op1, op2);
+    }
+
+    pub fn div_double_rr(&mut self, src: u8, dest: u8) {
+        self.div_double(dest, src, dest)
+    }
+
+    pub fn div_float_rr(&mut self, src: u8, dest: u8) {
+        self.div_float(dest, src, dest)
+    }
+
+    pub fn load_vector(&mut self, address: impl Into<Operand>, dest: u8) {
+        match address.into() {
+            Operand::Address(address) => {
+                if self.fp_try_load_with_offset::<128>(dest, address.base, address.offset) {
+                    return;
+                }
+                let r = self.get_cached_memory_temp_register_id_and_invalidate();
+                self.sign_extend32_to_64(address.offset, r);
+                self.assembler.ldr_fp::<128>(dest, address.base, r);
+            }
+
+            Operand::BaseIndex(address) => {
+                if matches!(address.scale, Scale::TimesOne | Scale::TimesFour) {
+                    if let Some(base) = self.try_fold_base_and_offset_part(address) {
+                        self.assembler.ldr_extend_fp::<128>(
+                            dest,
+                            address.base,
+                            address.index,
+                            Self::index_extend_type(address),
+                            address.scale as _,
+                        );
+                        return;
+                    }
+                }
+
+                let r = self.get_cached_memory_temp_register_id_and_invalidate();
+
+                self.sign_extend32_to_64(address.offset, r);
+                self.assembler.add_extend::<128, false>(
+                    Self::MEMORY_TEMP_REGISTER,
+                    Self::MEMORY_TEMP_REGISTER,
+                    address.index,
+                    Self::index_extend_type(address),
+                    address.scale as _,
+                );
+                self.assembler.ldr_fp::<128>(dest, address.base, r);
+            }
+
+            Operand::AbsoluteAddress(address) => {
+                let mut r = self.memory_temp_register;
+                self.move_to_cached_reg64(address.ptr as _, &mut r);
+                self.assembler
+                    .ldr_fp::<128>(dest, Self::MEMORY_TEMP_REGISTER, zr);
+                self.memory_temp_register = r;
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn load_double(&mut self, src: impl Into<Operand>, dest: u8) {
+        match src.into() {
+            Operand::Address(address) => {
+                if self.fp_try_load_with_offset::<64>(dest, address.base, address.offset) {
+                    return;
+                }
+                let r = self.get_cached_memory_temp_register_id_and_invalidate();
+                self.sign_extend32_to_64(address.offset, r);
+                self.assembler.ldr_fp::<64>(dest, address.base, r);
+            }
+
+            Operand::BaseIndex(address) => {
+                if matches!(address.scale, Scale::TimesOne | Scale::TimesEight) {
+                    if let Some(base) = self.try_fold_base_and_offset_part(address) {
+                        self.assembler.ldr_extend_fp::<64>(
+                            dest,
+                            address.base,
+                            address.index,
+                            Self::index_extend_type(address),
+                            address.scale as _,
+                        );
+                        return;
+                    }
+                }
+
+                let r = self.get_cached_memory_temp_register_id_and_invalidate();
+
+                self.sign_extend32_to_64(address.offset, r);
+                self.assembler.add_extend::<64, false>(
+                    Self::MEMORY_TEMP_REGISTER,
+                    Self::MEMORY_TEMP_REGISTER,
+                    address.index,
+                    Self::index_extend_type(address),
+                    address.scale as _,
+                );
+                self.assembler.ldr_fp::<64>(dest, address.base, r);
+            }
+
+            Operand::AbsoluteAddress(address) => {
+                let mut r = self.memory_temp_register;
+                self.move_to_cached_reg64(address.ptr as _, &mut r);
+                self.assembler
+                    .ldr_fp::<64>(dest, Self::MEMORY_TEMP_REGISTER, zr);
+                self.memory_temp_register = r;
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn load_float(&mut self, src: impl Into<Operand>, dest: u8) {
+        match src.into() {
+            Operand::Address(address) => {
+                if self.fp_try_load_with_offset::<32>(dest, address.base, address.offset) {
+                    return;
+                }
+                let r = self.get_cached_memory_temp_register_id_and_invalidate();
+                self.sign_extend32_to_64(address.offset, r);
+                self.assembler.ldr_fp::<32>(dest, address.base, r);
+            }
+
+            Operand::BaseIndex(address) => {
+                if matches!(address.scale, Scale::TimesOne | Scale::TimesFour) {
+                    if let Some(base) = self.try_fold_base_and_offset_part(address) {
+                        self.assembler.ldr_extend_fp::<32>(
+                            dest,
+                            address.base,
+                            address.index,
+                            Self::index_extend_type(address),
+                            address.scale as _,
+                        );
+                        return;
+                    }
+                }
+
+                let r = self.get_cached_memory_temp_register_id_and_invalidate();
+
+                self.sign_extend32_to_64(address.offset, r);
+                self.assembler.add_extend::<32, false>(
+                    Self::MEMORY_TEMP_REGISTER,
+                    Self::MEMORY_TEMP_REGISTER,
+                    address.index,
+                    Self::index_extend_type(address),
+                    address.scale as _,
+                );
+                self.assembler.ldr_fp::<32>(dest, address.base, r);
+            }
+
+            Operand::AbsoluteAddress(address) => {
+                let mut r = self.memory_temp_register;
+                self.move_to_cached_reg64(address.ptr as _, &mut r);
+                self.assembler
+                    .ldr_fp::<32>(dest, Self::MEMORY_TEMP_REGISTER, zr);
+                self.memory_temp_register = r;
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn move_double(&mut self, src: u8, dest: u8) {
+        self.assembler.fmov::<64>(dest, src);
+    }
+
+    pub fn move_vector(&mut self, src: u8, dest: u8) {
+        self.assembler.fmov::<128>(dest, src);
+    }
+
+    pub fn materialize_vector(&mut self, src: u128, dest: u8) {
+        if value == 0 {
+            self.move_zero_to_vector(dest);
+            return;
+        }
+
+        let (lo, hi): (u64, u64) = unsafe { std::mem::transmute(src) };
+        self.mov(lo as i64, dest);
+        self.vector_splat_int64(Self::DATA_TEMP_REGISTER, dest);
+        self.mov(hi as i64, Self::DATA_TEMP_REGISTER);
+        self.vector_replace_lane_int64(1i32, Self::DATA_TEMP_REGISTER, dest);
+    }
+
+    pub fn move_zero_to_double(&mut self, dest: u8) {
+        // Intentionally use 128bit width here to clear all part of this register with zero.
+        self.assembler.movi_fp::<128>(dest, 0);
+    }
+
+    pub fn move_zero_to_float(&mut self, dest: u8) {
+        self.assembler.movi_fp::<128>(dest, 0);
+    }
+
+    pub fn move_double_to64(&mut self, src: u8, dest: u8) {
+        self.assembler.fmov_f2i::<64>(dest, src);
+    }
+
+    pub fn move_float_to32(&mut self, src: u8, dest: u8) {
+        self.assembler.fmov_f2i::<32>(dest, src);
+    }
+
+    pub fn move_conditionally_double(
+        &mut self,
+        cond: DoubleCondition,
+        left: u8,
+        right: u8,
+        src: u8,
+        dest: u8,
+    ) {
+        self.assembler.fcmp::<64>(left, right);
+        self.move_conditionally_after_floating_point_compare::<64>(cond, src, dest);
+    }
+
+    pub fn move_conditionally_double_with_zero(
+        &mut self,
+        cond: DoubleCondition,
+        left: u8,
+        src: u8,
+        dest: u8,
+    ) {
+        self.assembler.fcmp_0::<64>(left);
+        self.move_conditionally_after_floating_point_compare::<64>(cond, src, dest);
+    }
+
+    pub fn move_conditionally_double_then_else(
+        &mut self,
+        cond: DoubleCondition,
+        left: u8,
+        right: u8,
+        then_case: u8,
+        else_case: u8,
+        dest: u8,
+    ) {
+        self.assembler.fcmp::<64>(left, right);
+        self.move_conditionally_after_floating_point_compare_then_else::<64>(
+            cond, then_case, else_case, dest,
+        );
+    }
+
+    pub fn move_conditionally_double_with_zero_then_else(
+        &mut self,
+        cond: DoubleCondition,
+        left: u8,
+        then_case: u8,
+        else_case: u8,
+        dest: u8,
+    ) {
+        self.assembler.fcmp_0::<64>(left);
+        self.move_conditionally_after_floating_point_compare_then_else::<64>(
+            cond, then_case, else_case, dest,
+        );
+    }
+
+    pub fn move_conditionally_float(
+        &mut self,
+        cond: DoubleCondition,
+        left: u8,
+        right: u8,
+        src: u8,
+        dest: u8,
+    ) {
+        self.assembler.fcmp::<32>(left, right);
+        self.move_conditionally_after_floating_point_compare::<32>(cond, src, dest);
+    }
+
+    pub fn move_conditionally_float_with_zero(
+        &mut self,
+        cond: DoubleCondition,
+        left: u8,
+        src: u8,
+        dest: u8,
+    ) {
+        self.assembler.fcmp_0::<32>(left);
+        self.move_conditionally_after_floating_point_compare::<32>(cond, src, dest);
+    }
+
+    pub fn move_conditionally_float_then_else(
+        &mut self,
+        cond: DoubleCondition,
+        left: u8,
+        right: u8,
+        then_case: u8,
+        else_case: u8,
+        dest: u8,
+    ) {
+        self.assembler.fcmp::<32>(left, right);
+        self.move_conditionally_after_floating_point_compare_then_else::<32>(
+            cond, then_case, else_case, dest,
+        );
+    }
+
+    pub fn move_conditionally_float_with_zero_then_else(
+        &mut self,
+        cond: DoubleCondition,
+        left: u8,
+        then_case: u8,
+        else_case: u8,
+        dest: u8,
+    ) {
+        self.assembler.fcmp_0::<32>(left);
+        self.move_conditionally_after_floating_point_compare_then_else::<32>(
+            cond, then_case, else_case, dest,
+        );
+    }
+
+    pub fn move_double_conditionally_double(
+        &mut self,
+        cond: DoubleCondition,
+        left: u8,
+        right: u8,
+        then_case: u8,
+        else_case: u8,
+        dest: u8,
+    ) {
+        self.assembler.fcmp::<64>(left, right);
+        self.move_double_conditionally_after_floating_point_compare_then_else(
+            cond, then_case, else_case, dest,
+        )
+    }
+
+    pub fn move_double_conditionally_double_with_zero(
+        &mut self,
+        cond: DoubleCondition,
+        left: u8,
+        then_case: u8,
+        else_case: u8,
+        dest: u8,
+    ) {
+        self.assembler.fcmp_0::<64>(left);
+        self.move_double_conditionally_after_floating_point_compare_then_else(
+            cond, then_case, else_case, dest,
+        )
+    }
+
+    pub fn move_double_conditionally_float(
+        &mut self,
+        cond: DoubleCondition,
+        left: u8,
+        right: u8,
+        then_case: u8,
+        else_case: u8,
+        dest: u8,
+    ) {
+        self.assembler.fcmp::<64>(left, right);
+        self.move_double_conditionally_after_floating_point_compare_then_else(
+            cond, then_case, else_case, dest,
+        )
+    }
+
+    pub fn move_double_conditionally_float_with_zero(
+        &mut self,
+        cond: DoubleCondition,
+        left: u8,
+        then_case: u8,
+        else_case: u8,
+        dest: u8,
+    ) {
+        self.assembler.fcmp_0::<64>(left);
+        self.move_double_conditionally_after_floating_point_compare_then_else(
+            cond, then_case, else_case, dest,
+        )
+    }
+
+    pub fn move_conditionally_after_floating_point_compare<const DATASIZE: i32>(
+        &mut self,
+        cond: DoubleCondition,
+        src: u8,
+        dest: u8,
+    ) {
+        if cond == DoubleCondition::NotEqualAndOrdered {
+            let unordered = self.make_branch(Condition::VS);
+            self.assembler
+                .csel::<DATASIZE>(dest, src, dest, Condition::NE);
+            unordered.link(self);
+            return;
+        }
+
+        if cond == DoubleCondition::EqualOrUnordered {
+            // If the compare is unordered, src is copied to dest and the
+            // next csel has all arguments equal to src.
+            // If the compare is ordered, dest is unchanged and EQ decides
+            // what value to set.
+            self.assembler
+                .csel::<DATASIZE>(dest, src, dest, Condition::VS);
+            self.assembler
+                .csel::<DATASIZE>(dest, src, dest, Condition::EQ);
+            return;
+        }
+
+        self.assembler
+            .csel::<DATASIZE>(dest, src, dest, unsafe { transmute(cond) })
+    }
+
+    pub fn move_conditionally_after_floating_point_compare_then_else<const DATASIZE: i32>(
+        &mut self,
+        cond: DoubleCondition,
+        then_case: u8,
+        else_case: u8,
+        dest: u8,
+    ) {
+        if cond == DoubleCondition::NotEqualAndOrdered {
+            if dest == then_case {
+                self.assembler
+                    .csel::<DATASIZE>(then_case, else_case, then_case, Condition::VS);
+                self.assembler
+                    .csel::<DATASIZE>(dest, else_case, then_case, Condition::NE);
+            } else {
+                self.mov(else_case, dest);
+                let unordered = self.make_branch(Condition::VS);
+                self.assembler
+                    .csel::<DATASIZE>(dest, then_case, else_case, Condition::NE);
+                unordered.link(self);
+            }
+            return;
+        }
+
+        if cond == DoubleCondition::EqualOrUnordered {
+            if dest == else_case {
+                self.assembler
+                    .csel::<DATASIZE>(else_case, then_case, else_case, Condition::VS);
+                self.assembler
+                    .csel::<DATASIZE>(dest, then_case, else_case, Condition::EQ);
+            } else {
+                self.mov(then_case, dest);
+                let unordered = self.make_branch(Condition::VS);
+                self.assembler
+                    .csel::<DATASIZE>(dest, else_case, then_case, Condition::EQ);
+                unordered.link(self);
+            }
+
+            return;
+        }
+
+        self.assembler
+            .csel::<DATASIZE>(dest, then_case, else_case, unsafe { transmute(cond) })
+    }
+
+    pub fn move_double_conditionally_after_floating_point_compare_then_else<const DATASIZE: i32>(
+        &mut self,
+        cond: DoubleCondition,
+        then_case: u8,
+        else_case: u8,
+        dest: u8,
+    ) {
+        if cond == DoubleCondition::NotEqualAndOrdered {
+            if dest == then_case {
+                // If the compare is unordered, else_case is copied to then_case and the
+                // next fcsel has all arguments equal to else_case.
+                // If the compare is ordered, dest is unchanged and NE decides
+                // what value to set.
+                self.assembler
+                    .fcsel::<DATASIZE>(then_case, else_case, then_case, Condition::VS);
+                self.assembler
+                    .fcsel::<DATASIZE>(dest, else_case, then_case, Condition::NE);
+            } else {
+                self.assembler.fmov::<64>(dest, else_case);
+                let unordered = self.make_branch(Condition::VS);
+                self.assembler
+                    .fcsel::<DATASIZE>(dest, then_case, else_case, Condition::NE);
+                unordered.link(self);
+            }
+
+            return;
+        }
+
+        if cond == DoubleCondition::EqualOrUnordered {
+            if dest == else_case {
+                // If the compare is unordered, then_case is copied to else_case and the
+                // next csel has all arguments equal to then_case.
+                // If the compare is ordered, dest is unchanged and EQ decides
+                // what value to set.
+                self.assembler
+                    .fcsel::<DATASIZE>(else_case, then_case, else_case, Condition::VS);
+                self.assembler
+                    .fcsel::<DATASIZE>(dest, then_case, else_case, Condition::EQ);
+            } else {
+                self.assembler.fmov::<64>(dest, then_case);
+                let unordered = self.make_branch(Condition::VS);
+                self.assembler
+                    .fcsel::<DATASIZE>(dest, then_case, else_case, Condition::EQ);
+                unordered.link(self);
+            }
+
+            return;
+        }
+
+        self.assembler
+            .fcsel::<DATASIZE>(dest, then_case, else_case, unsafe { transmute(cond) })
+    }
+
+    pub fn mul_double(&mut self, op1: u8, op2: u8, dest: u8) {
+        self.assembler.fmul::<64>(dest, op1, op2);
+    }
+
+    pub fn mul_double_rr(&mut self, src: impl Into<Operand>, dest: u8) {
+        match src.into() {
+            Operand::Register(src) => {
+                self.mul_double(dest, src, dest);
+            }
+
+            Operand::Address(address) => {
+                self.load_double(address, Self::FP_TEMP_REGISTER);
+                self.mul_double(dest, Self::FP_TEMP_REGISTER, dest);
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn mul_float(&mut self, op1: u8, op2: u8, dest: u8) {
+        self.assembler.fmul::<32>(dest, op1, op2);
+    }
+
+    pub fn mul_float_rr(&mut self, src: impl Into<Operand>, dest: u8) {
+        match src.into() {
+            Operand::Register(src) => {
+                self.mul_float(dest, src, dest);
+            }
+
+            Operand::Address(address) => {
+                self.load_float(address, Self::FP_TEMP_REGISTER);
+                self.mul_float(dest, Self::FP_TEMP_REGISTER, dest);
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn and_double(&mut self, op1: u8, op2: u8, dest: u8) {
+        self.assembler.vand::<64>(dest, op1, op2);
+    }
+
+    pub fn and_float(&mut self, op1: u8, op2: u8, dest: u8) {
+        self.and_double(op1, op2, dest);
+    }
+
+    pub fn or_double(&mut self, op1: u8, op2: u8, dest: u8) {
+        self.assembler.vorr::<64>(dest, op1, op2);
+    }
+
+    pub fn or_float(&mut self, op1: u8, op2: u8, dest: u8) {
+        self.or_double(op1, op2, dest);
+    }
+
+    pub fn float_max(&mut self, op1: u8, op2: u8, dest: u8) {
+        self.assembler.fmax::<64>(dest, op1, op2);
+    }
+
+    pub fn float_min(&mut self, op1: u8, op2: u8, dest: u8) {
+        self.assembler.fmin::<64>(dest, op1, op2);
+    }
+
+    pub fn double_max(&mut self, op1: u8, op2: u8, dest: u8) {
+        self.assembler.fmax::<64>(dest, op1, op2);
+    }
+
+    pub fn double_min(&mut self, op1: u8, op2: u8, dest: u8) {
+        self.assembler.fmin::<64>(dest, op1, op2);
+    }
+
+    pub fn negate_double(&mut self, src: u8, dest: u8) {
+        self.assembler.fneg::<64>(dest, src);
+    }
+
+    pub fn negate_float(&mut self, src: u8, dest: u8) {
+        self.assembler.fneg::<32>(dest, src);
+    }
+
+    pub fn sqrt_double(&mut self, src: u8, dest: u8) {
+        self.assembler.fsqrt::<64>(dest, src);
+    }
+
+    pub fn sqrt_float(&mut self, src: u8, dest: u8) {
+        self.assembler.fsqrt::<32>(dest, src);
+    }
+
+    pub fn store_double(&mut self, src: u8, dest: impl Into<Operand>) {
+        match dest.into() {
+            Operand::Address(address) => {
+                if self.fp_try_store_with_offset::<64>(src, address.base, address.offset) {
+                    return;
+                }
+                let r = self.get_cached_memory_temp_register_id_and_invalidate();
+                self.sign_extend32_to_64(address.offset, r);
+                self.assembler.str_fp::<64>(src, address.base, r);
+            }
+
+            Operand::BaseIndex(address) => {
+                if matches!(address.scale, Scale::TimesOne | Scale::TimesEight) {
+                    if let Some(base) = self.try_fold_base_and_offset_part(address) {
+                        self.assembler.str_extend_fp::<64>(
+                            src,
+                            base,
+                            address.index,
+                            Self::index_extend_type(address),
+                            address.scale as _,
+                        );
+                        return;
+                    }
+                }
+
+                let r = self.get_cached_memory_temp_register_id_and_invalidate();
+                self.sign_extend32_to_64(address.offset, r);
+                self.assembler.add_extend::<64, false>(
+                    Self::MEMORY_TEMP_REGISTER,
+                    Self::MEMORY_TEMP_REGISTER,
+                    address.index,
+                    Self::index_extend_type(address),
+                    address.scale as _,
+                );
+
+                self.assembler
+                    .str_fp::<64>(src, address.base, Self::MEMORY_TEMP_REGISTER);
+            }
+
+            Operand::AbsoluteAddress(address) => {
+                let mut r = self.memory_temp_register;
+                self.move_to_cached_reg64(address.ptr as _, &mut r);
+                self.memory_temp_register = r;
+                self.assembler
+                    .str_fp::<64>(src, Self::MEMORY_TEMP_REGISTER, zr);
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn store_float(&mut self, src: u8, dest: impl Into<Operand>) {
+        match dest.into() {
+            Operand::Address(address) => {
+                if self.fp_try_store_with_offset::<32>(src, address.base, address.offset) {
+                    return;
+                }
+                let r = self.get_cached_memory_temp_register_id_and_invalidate();
+                self.sign_extend32_to_64(address.offset, r);
+                self.assembler.str_fp::<32>(src, address.base, r);
+            }
+
+            Operand::BaseIndex(address) => {
+                if matches!(address.scale, Scale::TimesOne | Scale::TimesEight) {
+                    if let Some(base) = self.try_fold_base_and_offset_part(address) {
+                        self.assembler.str_extend_fp::<32>(
+                            src,
+                            base,
+                            address.index,
+                            Self::index_extend_type(address),
+                            address.scale as _,
+                        );
+                        return;
+                    }
+                }
+
+                let r = self.get_cached_memory_temp_register_id_and_invalidate();
+                self.sign_extend32_to_64(address.offset, r);
+                self.assembler.add_extend::<64, false>(
+                    Self::MEMORY_TEMP_REGISTER,
+                    Self::MEMORY_TEMP_REGISTER,
+                    address.index,
+                    Self::index_extend_type(address),
+                    address.scale as _,
+                );
+
+                self.assembler
+                    .str_fp::<32>(src, address.base, Self::MEMORY_TEMP_REGISTER);
+            }
+
+            Operand::AbsoluteAddress(address) => {
+                let mut r = self.memory_temp_register;
+                self.move_to_cached_reg64(address.ptr as _, &mut r);
+                self.memory_temp_register = r;
+                self.assembler
+                    .str_fp::<32>(src, Self::MEMORY_TEMP_REGISTER, zr);
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn store_vector(&mut self, src: u8, dest: impl Into<Operand>) {
+        match dest.into() {
+            Operand::Address(address) => {
+                if self.fp_try_store_with_offset::<128>(src, address.base, address.offset) {
+                    return;
+                }
+                let r = self.get_cached_memory_temp_register_id_and_invalidate();
+                self.sign_extend32_to_64(address.offset, r);
+                self.assembler.str_fp::<128>(src, address.base, r);
+            }
+
+            Operand::BaseIndex(address) => {
+                if matches!(address.scale, Scale::TimesOne | Scale::TimesEight) {
+                    if let Some(base) = self.try_fold_base_and_offset_part(address) {
+                        self.assembler.str_extend_fp::<128>(
+                            src,
+                            base,
+                            address.index,
+                            Self::index_extend_type(address),
+                            address.scale as _,
+                        );
+                        return;
+                    }
+                }
+
+                let r = self.get_cached_memory_temp_register_id_and_invalidate();
+                self.sign_extend32_to_64(address.offset, r);
+                self.assembler.add_extend::<64, false>(
+                    Self::MEMORY_TEMP_REGISTER,
+                    Self::MEMORY_TEMP_REGISTER,
+                    address.index,
+                    Self::index_extend_type(address),
+                    address.scale as _,
+                );
+
+                self.assembler
+                    .str_fp::<128>(src, address.base, Self::MEMORY_TEMP_REGISTER);
+            }
+
+            Operand::AbsoluteAddress(address) => {
+                let mut r = self.memory_temp_register;
+                self.move_to_cached_reg64(address.ptr as _, &mut r);
+                self.memory_temp_register = r;
+                self.assembler
+                    .str_fp::<128>(src, Self::MEMORY_TEMP_REGISTER, zr);
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn sub_double(&mut self, lhs: u8, rhs: u8, dest: u8) {
+        self.assembler.fsub::<64>(dest, lhs, rhs);
+    }
+
+    pub fn sub_double_rr(&mut self, src: impl Into<Operand>, dest: u8) {
+        match src.into() {
+            Operand::Register(reg) => {
+                self.assembler.fsub::<64>(dest, dest, reg);
+            }
+
+            Operand::Address(address) => {
+                self.load_double(address, Self::FP_TEMP_REGISTER);
+                self.sub_double_rr(Self::FP_TEMP_REGISTER, dest);
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn sub_float(&mut self, lhs: u8, rhs: u8, dest: u8) {
+        self.assembler.fsub::<32>(dest, lhs, rhs);
+    }
+
+    pub fn sub_float_rr(&mut self, src: impl Into<Operand>, dest: u8) {
+        match src.into() {
+            Operand::Register(reg) => {
+                self.assembler.fsub::<32>(dest, dest, reg);
+            }
+
+            Operand::Address(address) => {
+                self.load_float(address, Self::FP_TEMP_REGISTER);
+                self.sub_float_rr(Self::FP_TEMP_REGISTER, dest);
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn truncate_double_to_int32(&mut self, src: u8, dest: u8) {
+        self.assembler.fcvtzs::<32, 64>(dest, src);
+    }
+
+    pub fn truncate_double_to_uint32(&mut self, src: u8, dest: u8) {
+        self.assembler.fcvtzu::<32, 64>(dest, src);
+    }
+
+    pub fn truncate_double_to_int64(&mut self, src: u8, dest: u8) {
+        self.assembler.fcvtzs::<64, 64>(dest, src);
+    }
+
+    pub fn truncate_double_to_uint64(&mut self, src: u8, dest: u8) {
+        self.assembler.fcvtzu::<64, 64>(dest, src);
+    }
+
+    pub fn truncate_float_to_int32(&mut self, src: u8, dest: u8) {
+        self.assembler.fcvtzs::<32, 32>(dest, src);
+    }
+
+    pub fn truncate_float_to_uint32(&mut self, src: u8, dest: u8) {
+        self.assembler.fcvtzu::<32, 32>(dest, src);
+    }
+
+    pub fn truncate_float_to_int64(&mut self, src: u8, dest: u8) {
+        self.assembler.fcvtzs::<64, 32>(dest, src);
+    }
+
+    pub fn truncate_float_to_uint64(&mut self, src: u8, dest: u8) {
+        self.assembler.fcvtzu::<64, 32>(dest, src);
+    }
+
+    // Stack manipulation operations:
+    //
+    // The ABI is assumed to provide a stack abstraction to memory,
+    // containing machine word sized units of data. Push and pop
+    // operations add and remove a single register sized unit of data
+    // to or from the stack. These operations are not supported on
+    // ARM64. Peek and poke operations read or write values on the
+    // stack, without moving the current stack position. Additionally,
+    // there are popToRestore and pushToSave operations, which are
+    // designed just for quick-and-dirty saving and restoring of
+    // temporary values. These operations don't claim to have any
+    // ABI compatibility.
+    pub fn pop(_: impl Into<Operand>) {
+        panic!("pop is not supported on ARM64")
+    }
+
+    pub fn push(_: impl Into<Operand>) {
+        panic!("push is not supported on ARM64")
+    }
+
+    pub fn pop_pair(&mut self, dest1: u8, dest2: u8) {
+        self.assembler
+            .ldp_post::<64>(dest1, dest2, sp, PairPostIndex(16));
+    }
+
+    pub fn push_pair(&mut self, src1: u8, src2: u8) {
+        self.assembler
+            .stp_pair_pre::<64>(src1, src2, sp, PairPreIndex(-16));
+    }
+
+    pub fn pop_to_restore(&mut self, dest: u8) {
+        self.assembler.ldr_post::<64>(dest, sp, PostIndex(16));
+    }
+
+    pub fn push_to_save(&mut self, src: impl Into<Operand>) {
+        match src.into() {
+            Operand::Address(address) => {
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
+                self.load32(address, r);
+                self.push_to_save(r);
+            }
+
+            Operand::Register(src) => {
+                self.assembler.str_pre::<64>(src, sp, PreIndex(-16));
+            }
+
+            Operand::Imm32(imm) => {
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
+                self.mov(imm, r);
+                self.push_to_save(r);
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn push_to_save_fp(&mut self, src: u8) {
+        self.sub64(16i32, Self::STACK_POINTER_REGISTER);
+        self.store_double(src, Address::new(Self::STACK_POINTER_REGISTER, 0));
+    }
+
+    pub fn pop_to_restore_fp(&mut self, dest: u8) {
+        self.load_double(Address::new(Self::STACK_POINTER_REGISTER, 0), dest);
+        self.add64(16i32, Self::STACK_POINTER_REGISTER);
+    }
+
+    pub fn push_to_save_immediate_without_touching_registers(&mut self, imm: i32) {
+        // We can use any non-hardware reserved register here since we restore its value.
+        // We pick dataTempRegister arbitrarily. We don't need to invalidate it here since
+        // we restore its original value.
+        let reg = Self::DATA_TEMP_REGISTER;
+        self.push_pair(reg, reg);
+        self.mov(imm, reg);
+        self.store64(reg, Address::new(Self::STACK_POINTER_REGISTER, 0));
+        self.load64(Address::new(Self::STACK_POINTER_REGISTER, 8), reg);
+    }
+
+    pub fn move64_to_double(&mut self, src: impl Into<Operand>, dest: u8) {
+        match src.into() {
+            Operand::Register(reg) => {
+                self.assembler.fmov_i2f::<64>(dest, reg);
+            }
+
+            Operand::Imm64(imm) => {
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
+                self.mov(imm, r);
+                self.assembler.fmov_i2f::<64>(dest, r);
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn move32_to_float(&mut self, src: impl Into<Operand>, dest: u8) {
+        match src.into() {
+            Operand::Register(reg) => {
+                self.assembler.fmov_i2f::<32>(dest, reg);
+            }
+
+            Operand::Imm32(imm) => {
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
+                self.mov(imm, r);
+                self.assembler.fmov_i2f::<32>(dest, r);
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn swap(&mut self, reg1: u8, reg2: u8) {
+        if reg1 == reg2 {
+            return;
+        }
+        let r = self.get_cached_data_temp_register_id_and_invalidate();
+        self.mov(reg1, r);
+        self.mov(reg2, reg1);
+        self.mov(r, reg2);
+    }
+
+    pub fn swap_double(&mut self, reg1: u8, reg2: u8) {
+        if reg1 == reg2 {
+            return;
+        }
+
+        self.move_double(reg1, Self::FP_TEMP_REGISTER);
+        self.move_double(reg2, reg1);
+        self.move_double(Self::FP_TEMP_REGISTER, reg2);
+    }
+
+    pub fn zero_extend32_to_word(&mut self, src: u8, dest: u8) {
+        self.and64_rrr(0xffffffffi64, src, dest);
+    }
+
+    pub fn zero_extend48_to_word(&mut self, src: u8, dest: u8) {
+        self.assembler.ubfx::<64>(dest, src, 0, 48);
+    }
+
+    pub fn move_conditionally32(
+        &mut self,
+        cond: RelationalCondition,
+        left: u8,
+        right: u8,
+        src: u8,
+        dest: u8,
+    ) {
+        self.assembler.cmp::<32>(left, right);
+        self.assembler
+            .csel::<64>(dest, src, dest, unsafe { transmute(cond) });
+    }
+
+    pub fn move_conditionally32_then_else(
+        &mut self,
+        cond: RelationalCondition,
+        left: u8,
+        right: impl Into<Operand>,
+        then_case: u8,
+        else_case: u8,
+        dest: u8,
+    ) {
+        match right.into() {
+            Operand::Register(right) => {
+                self.assembler.cmp::<32>(left, right);
+                self.assembler
+                    .csel::<64>(dest, then_case, else_case, unsafe { transmute(cond) });
+            }   
+
+            Operand::Imm32(imm) => {
+                
+            }
+
+            _ => unreachable!()
+        }
     }
 
     pub fn jump(&mut self) -> Jump {
@@ -3462,6 +4708,55 @@ impl MacroAssemblerARM64 {
         }
     }
 
+    fn make_branch_rel(&mut self, rel: RelationalCondition) -> Jump {
+        self.make_branch(unsafe { transmute(rel) })
+    }
+
+    fn make_branch_res(&mut self, cond: ResultCondition) -> Jump {
+        self.make_branch(unsafe { transmute(cond) })
+    }
+
+    pub fn make_branch_double(&mut self, cond: DoubleCondition) -> Jump {
+        self.make_branch(unsafe { transmute(cond) })
+    }
+
+    fn make_compare_and_branch<const DATASIZE: i32>(
+        &mut self,
+        cond: ZeroCondition,
+        reg: u8,
+    ) -> Jump {
+        self.pad_before_patch();
+        if cond == ZeroCondition::IsZero {
+            self.assembler.cbz::<DATASIZE>(reg, 0);
+        } else {
+            self.assembler.cbnz::<DATASIZE>(reg, 0);
+        }
+
+        let label = self.assembler.label_ignoring_watchpoints();
+        self.assembler.nop();
+        let mut j = Jump::new(label);
+        j.typ = JumpType::CompareAndBranchFixedSize;
+        j.condition = unsafe { transmute(cond) };
+        j
+    }
+
+    fn make_test_bit_and_branch(&mut self, reg: u8, mut bit: usize, cond: ZeroCondition) -> Jump {
+        self.pad_before_patch();
+        bit &= 0x3F;
+        if cond == ZeroCondition::IsZero {
+            self.assembler.tbz(reg, bit as _, 0)
+        } else {
+            self.assembler.tbnz(reg, bit as _, 0);
+        }
+
+        let label = self.assembler.label_ignoring_watchpoints();
+        self.assembler.nop();
+        let mut j = Jump::new(label);
+        j.typ = JumpType::TestBitFixedSize;
+        j.condition = unsafe { transmute(cond) };
+        j
+    }
+
     fn make_branch(&mut self, cond: Condition) -> Jump {
         self.pad_before_patch();
         self.assembler.b_cond(cond, 0);
@@ -3474,7 +4769,12 @@ impl MacroAssemblerARM64 {
         j
     }
 
-    fn floating_pointer_compare(&mut self, cond: DoubleCondition, dest: u8, compare: impl FnOnce(&mut Self)) {
+    fn floating_point_compare(
+        &mut self,
+        cond: DoubleCondition,
+        dest: u8,
+        compare: impl FnOnce(&mut Self),
+    ) {
         if cond == DoubleCondition::NotEqualAndOrdered {
             self.mov(0i32, dest);
             compare(self);
@@ -3494,5 +4794,15 @@ impl MacroAssemblerARM64 {
 
         compare(self);
         self.assembler.cset::<32>(dest, unsafe { transmute(cond) });
+    }
+
+    pub fn compute_compare_to_zero_test(cond: RelationalCondition) -> Option<ResultCondition> {
+        match cond {
+            RelationalCondition::Equal => Some(ResultCondition::Zero),
+            RelationalCondition::NotEqual => Some(ResultCondition::NotZero),
+            RelationalCondition::LessThan => Some(ResultCondition::Signed),
+            RelationalCondition::GreaterThanOrEqual => Some(ResultCondition::PositiveOrZero),
+            _ => None,
+        }
     }
 }

@@ -3397,6 +3397,16 @@ impl ARM64Assembler {
         self.orr_imm::<DATASIZE>(rd, zr, imm);
     }
 
+    pub fn movi_fp<const DATASIZE: i32>(&mut self, rd: u8, imm: u8) {
+        self.insn(Self::simd_move_immediate(
+            DATASIZE == 128,
+            true,
+            0b1110,
+            imm as _,
+            rd,
+        ))
+    }
+
     pub fn movi8<const DATASIZE: i32>(&mut self, rd: u8, imm: u8) {
         self.insn(Self::simd_move_immediate(
             DATASIZE == 128,
@@ -4497,6 +4507,16 @@ impl ARM64Assembler {
         ));
     }
 
+    pub fn fcvtzu<const DSTSIZE: i32, const SRCSIZE: i32>(&mut self, rd: u8, vn: u8) {
+        self.insn(Self::floating_point_integer_conversion_f2i(
+            datasize(DSTSIZE),
+            datasize(SRCSIZE),
+            FPIntConvOp::FCVTZU,
+            vn,
+            rd,
+        ));
+    }
+
     pub fn fdiv<const DATASIZE: i32>(&mut self, vd: u8, vn: u8, vm: u8) {
         self.insn(Self::floating_point_data_processing_2_source(
             datasize(DATASIZE),
@@ -4506,6 +4526,7 @@ impl ARM64Assembler {
             vd,
         ));
     }
+
 
     pub fn fmadd<const DATASIZE: i32>(&mut self, vd: u8, vn: u8, vm: u8, va: u8) {
         self.insn(Self::floating_point_data_processing_3_source(
@@ -4568,20 +4589,20 @@ impl ARM64Assembler {
         ));
     }
 
-    pub fn fmov_i2f<const DATASIZE: i32, const SRCSIZE: i32>(&mut self, rd: u8, vn: u8) {
+    pub fn fmov_i2f<const DATASIZE: i32>(&mut self, rd: u8, vn: u8) {
         self.insn(Self::floating_point_integer_conversion_i2f(
             datasize(DATASIZE),
-            datasize(SRCSIZE),
+            datasize(DATASIZE),
             FPIntConvOp::FMOVX2Q,
             vn,
             rd,
         ));
     }
 
-    pub fn fmov_f2i<const DSTSIZE: i32, const SRCSIZE: i32>(&mut self, rd: u8, vn: u8) {
+    pub fn fmov_f2i<const DATASIZE: i32>(&mut self, rd: u8, vn: u8) {
         self.insn(Self::floating_point_integer_conversion_f2i(
-            datasize(DSTSIZE),
-            datasize(SRCSIZE),
+            datasize(DATASIZE),
+            datasize(DATASIZE),
             FPIntConvOp::FMOVQ2X,
             vn,
             rd,
