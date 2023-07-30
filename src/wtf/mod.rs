@@ -191,3 +191,21 @@ pub const fn log2i_graceful(value: usize) -> isize {
 
     bits as isize - value.leading_zeros() as isize - 1
 }
+
+pub fn has_one_bit_set<
+    T: Copy
+        + Eq
+        + One
+        + Zero
+        + Not<Output = T>
+        + BitOr<T, Output = T>
+        + BitAnd<T, Output = T>
+        + Sub<Output = T>
+        + PartialOrd
+        + PartialEq,
+>(
+    value: T,
+) -> bool {
+    // !((value - 1) & value) && value
+    (value & (value - T::one())) == T::zero() && (value != T::zero())
+}

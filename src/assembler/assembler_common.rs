@@ -1,3 +1,5 @@
+use super::macro_assembler_arm64::{RelationalCondition, ResultCondition};
+
 pub const fn is_uint12(x: i32) -> bool {
     (x & !0xfff) == 0
 }
@@ -323,3 +325,90 @@ impl SIMDLane {
         }
     }
 }
+
+pub fn is_unsigned_rel(cond: RelationalCondition) -> bool {
+    match cond {
+        RelationalCondition::Equal
+        | RelationalCondition::NotEqual
+        | RelationalCondition::Above
+        | RelationalCondition::AboveOrEqual 
+        | RelationalCondition::Below
+        | RelationalCondition::BelowOrEqual => true,
+        _ => false,
+    }
+}
+
+pub fn is_signed_rel(cond: RelationalCondition) -> bool {
+    match cond {
+        RelationalCondition::Equal
+        | RelationalCondition::NotEqual
+        | RelationalCondition::GreaterThanOrEqual
+        | RelationalCondition::GreaterThan
+        | RelationalCondition::LessThanOrEqual
+        | RelationalCondition::LessThan => true,
+        _ => false,
+    }
+}
+
+pub fn is_signed_res(cond: ResultCondition) -> bool {
+    match cond {
+        ResultCondition::Signed
+        | ResultCondition::PositiveOrZero
+        | ResultCondition::NonZero
+        | ResultCondition::Zero => true,
+        _ => false,
+    }
+}
+
+pub fn is_unsigned_res(cond: ResultCondition) -> bool {
+    match cond {
+        ResultCondition::Zero 
+        | ResultCondition::NonZero => true,
+        _ => false,
+    }
+}
+
+pub fn mask8_on_condition_res(cond: ResultCondition,imm: i32) -> i32 {
+    if matches!(cond, ResultCondition::Zero | ResultCondition::NonZero) {
+        if imm == -1 {
+            return imm;
+        }
+    }
+
+    if is_unsigned_res(cond) {
+        return (imm as u8) as i32;
+    }
+
+    (imm as i8) as i32 
+}
+
+pub fn mask8_on_condition_rel(cond: RelationalCondition,imm: i32) -> i32 {
+    if is_unsigned_rel(cond) {
+        return (imm as u8) as i32;
+    }
+
+    (imm as i8) as i32 
+}
+
+pub fn mask16_on_condition_res(cond: ResultCondition,imm: i32) -> i32 {
+    if matches!(cond, ResultCondition::Zero | ResultCondition::NonZero) {
+        if imm == -1 {
+            return imm;
+        }
+    }
+
+    if is_unsigned_res(cond) {
+        return (imm as u16) as i32;
+    }
+
+    (imm as i16) as i32 
+}
+
+pub fn mask16_on_condition_rel(cond: RelationalCondition,imm: i32) -> i32 {
+    if is_unsigned_rel(cond) {
+        return (imm as u16) as i32;
+    }
+
+    (imm as i16) as i32 
+}
+
