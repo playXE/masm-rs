@@ -1,4 +1,4 @@
-#![allow(non_upper_case_globals, unused_mut, unused_variables)]
+#![allow(non_upper_case_globals, unused_mut, unused_variables, dead_code)]
 use crate::assembler::assembler_common::{is_int, is_int9, is_uint12};
 use std::{
     mem::{size_of, transmute},
@@ -1099,9 +1099,7 @@ impl ARM64Assembler {
         self.label()
     }
 
-    pub fn breakpoint(&mut self) {
-        todo!()
-    }
+
 
     pub unsafe fn replace_with_address_computation(mut instruction_start: *mut u8) {
         todo!()
@@ -2401,14 +2399,16 @@ impl ARM64Assembler {
     }
 
     pub fn madd<const DATASIZE: i32>(&mut self, rd: u8, rn: u8, rm: u8, ra: u8) {
-        self.insn(Self::data_processing_3_source(
+        let insn = Self::data_processing_3_source(
             datasize(DATASIZE),
             DataOp3Source::MADD,
             rm,
             ra,
             rn,
             rd,
-        ))
+        );
+  
+        self.insn(insn);
     }
 
     pub fn lsr<const DATASIZE: i32>(&mut self, rd: u8, rn: u8, rm: u8) {
@@ -6115,6 +6115,7 @@ impl ARM64Assembler {
         let insn = addr.cast::<i32>().read();
         let op = (insn >> 31) & 1;
         let imm26 = (insn << 6) >> 6;
+       
         ((insn & 0x7c000000) == 0x14000000).then(|| (op == 1, imm26))
     }
 
@@ -6304,7 +6305,7 @@ impl ARM64Assembler {
 
         Self::set_pointer(address, value_ptr, rd, flush);
     }
-
+    #[allow(unused_assignments)]
     pub unsafe fn link_jump_or_call(
         typ: BranchType,
         from: *mut i32,
@@ -6319,7 +6320,7 @@ impl ARM64Assembler {
             link = l;
             imm26 = i;
         } else {
-            assert!(Self::disassemble_nop(from.cast()));
+            assert!(Self::disassemble_nop(from.cast()), "nop expected at {:p}", from);
         }
 
         let is_call = typ == BranchType::CALL;
@@ -6391,9 +6392,10 @@ impl ARM64Assembler {
         let use_direct = is_int::<19>(offset as _);
 
         if use_direct || direct {
+            
             let insn = Self::conditional_branch_immediate(offset as _, cond);
             from.write_volatile(insn);
-
+            
             if !direct {
                 let insn = Self::nop_pseudo();
                 from.add(1).write_volatile(insn);
@@ -6558,8 +6560,8 @@ impl ARM64Assembler {
                 Self::link_conditional_branch(
                     false,
                     record.condition,
-                    from.cast(),
-                    from_instruction,
+                    from.cast::<i32>().sub(1),
+                    from_instruction.sub(1),
                     to,
                 );
             }

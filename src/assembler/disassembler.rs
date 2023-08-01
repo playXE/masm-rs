@@ -72,5 +72,25 @@ pub unsafe fn try_to_disassemble<W: std::fmt::Write>(
         )?;
     }
 
+    #[cfg(target_arch="aarch64")]
+    {
+        use capstone::prelude::*;
+
+        let cs = Capstone::new()
+            .arm64()
+            .mode(arch::arm64::ArchMode::Arm)
+            .detail(true)
+            .build()
+            .expect("failed to create Capstone object");
+
+        let code = std::slice::from_raw_parts(code, size);
+
+        let insns = cs.disasm_all(code, code.as_ptr() as _).expect("failed to disassemble");
+
+        for insn in insns.iter() {
+            write!(out, "{}0x{:x}: {} {}\n", prefix, insn.address(), insn.mnemonic().unwrap(), insn.op_str().unwrap())?;
+        }
+    }
+
     Ok(())
 }

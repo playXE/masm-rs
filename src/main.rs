@@ -1,28 +1,45 @@
-use capstone::prelude::BuildsCapstone;
-use macroassembler::assembler::arm64assembler::*;
+
+use macroassembler::assembler::macro_assembler_arm64::RelationalCondition;
+use macroassembler::assembler::{macro_assembler_arm64::MacroAssemblerARM64, link_buffer::LinkBuffer};
+use macroassembler::jit::gpr_info::*;
+
+fn iter_fac(x: i32) -> i32 {
+    let mut result = 1;
+    for i in 1..=x {
+        result *= i;
+    }
+    result
+}
 
 fn main() {
-    let mut asm = ARM64Assembler::new();
+    let mut masm = MacroAssemblerARM64::new();
+
+    // iterative factorial
+    let result = T1;
+    let i = T2;
+    let x = ARGUMENT_GPR0;
+
+    masm.mov(1i32, result);
+    masm.mov(1i32, i);
     
-    asm.movz::<32>(x0, 42, 0);
-    asm.ret(lr);
-  
-    let mut alloc = jit_allocator::JitAllocator::new(Default::default());
+    let loop_start = masm.label();
+    let br = masm.branch32(RelationalCondition::GreaterThan, i, x);
+    masm.mul32(i, result);  
+    masm.add32(1i32, i);
+    masm.jump().link_to(&mut masm, loop_start);
 
-    unsafe {
-        let cs = capstone::Capstone::new().arm64().mode(capstone::arch::arm64::ArchMode::Arm).build().unwrap();
-        let insns = cs.disasm_all(asm.buffer().data(), 0).unwrap();
+    br.link(&mut masm);
+    masm.mov(result, RETURN_VALUE_GPR);
+    masm.ret();
 
-        for i in insns.iter() {
-            println!("{}", i);
-        }
-        let (rx, rw) = alloc.alloc(asm.code_size()).unwrap();
+    let mut link = LinkBuffer::from_macro_assembler(&mut masm).unwrap();
 
-        rw.copy_from_nonoverlapping(asm.buffer().data().as_ptr(), asm.code_size());
-        jit_allocator::flush_instruction_cache(rx, asm.code_size());
+    let mut out = String::new();
+    let code = link.finalize_with_disassembly(true, "", &mut out).unwrap();
 
-        let func: extern "C" fn() -> i32 = std::mem::transmute(rx);
+    println!("Code: {}", out);
 
-        println!("Result: {}", func());
-    }
+    let f: extern "C" fn(i32) -> i32 = unsafe { std::mem::transmute(code.start()) };
+
+    println!("{}", f(5));
 }

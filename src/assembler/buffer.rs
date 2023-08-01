@@ -78,6 +78,11 @@ pub struct AssemblerBuffer {
 }
 
 impl AssemblerBuffer {
+    pub fn release_storage(&mut self) -> AssemblerData {
+        self.index = 0;
+        std::mem::replace(&mut self.storage, AssemblerData::new())
+    }
+
     pub fn data(&self) -> &[u8] {
         &self.storage.buffer
     }

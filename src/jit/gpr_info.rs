@@ -207,7 +207,62 @@ cfg_if! {
 
         pub const NUMBER_OF_ARGUMENT_REGISTERS: usize = 8;
     } else if #[cfg(target_arch="aarch64")] {
+        use crate::assembler::arm64assembler::*;
+        pub const NUMBER_OF_ARGUMENT_REGISTERS: usize = 8;
+        pub const NUMBER_OF_CALLEE_SAVED_REGISTERS: usize = 18;
 
+        pub const NUMBER_OF_REGISTERS: usize = 16;
+        pub const CALL_FRAME_REGISTER: u8 = fp;
+        pub const CONSTANTS_REGISTER: u8 = x26;
+        pub const DATA_TEMP_REGISTER: u8 = crate::assembler::macro_assembler_arm64::MacroAssemblerARM64::DATA_TEMP_REGISTER;
+        pub const MEMORY_TEMP_REGISTER: u8 = crate::assembler::macro_assembler_arm64::MacroAssemblerARM64::MEMORY_TEMP_REGISTER;
+
+        pub const T0: u8 = x0;
+        pub const T1: u8 = x1;
+        pub const T2: u8 = x2;  
+        pub const T3: u8 = x3;
+        pub const T4: u8 = x4;
+        pub const T5: u8 = x5;
+        pub const T6: u8 = x6;
+        pub const T7: u8 = x7;
+        pub const T8: u8 = x8;
+        pub const T9: u8 = x9;
+        pub const T10: u8 = x10;
+        pub const T11: u8 = x11;
+        pub const T12: u8 = x12;
+        pub const T13: u8 = x13;
+        pub const T14: u8 = x14;
+        pub const T15: u8 = x15;
+
+        pub const CS0: u8 = x19;
+        pub const CS1: u8 = x20;
+        pub const CS2: u8 = x21;
+        pub const CS3: u8 = x22;
+        pub const CS4: u8 = x23;
+        pub const CS5: u8 = x24;
+        pub const CS6: u8 = x25;
+        pub const CS7: u8 = x26;
+        pub const CS8: u8 = x27;
+        pub const CS9: u8 = x28;
+
+        pub const ARGUMENT_GPR0: u8 = x0;
+        pub const ARGUMENT_GPR1: u8 = x1;
+        pub const ARGUMENT_GPR2: u8 = x2;
+        pub const ARGUMENT_GPR3: u8 = x3;
+        pub const ARGUMENT_GPR4: u8 = x4;
+        pub const ARGUMENT_GPR5: u8 = x5;
+        pub const ARGUMENT_GPR6: u8 = x6;
+        pub const ARGUMENT_GPR7: u8 = x7;
+        
+        pub const NON_ARG_GPR0: u8 = x8;
+        pub const NON_ARG_GPR1: u8 = x9;
+
+        pub const RETURN_VALUE_GPR: u8 = x0;
+        pub const RETURN_VALUE_GPR2: u8 = x1;
+
+        pub const NON_PRESERVED_NON_RETURN_GPR: u8 = x2;
+        pub const NON_PRESERVED_NON_ARGUMENT_GPR0: u8 = x8;
+        pub const NON_PRESERVED_NON_ARGUMENT_GPR1: u8 = x9;
     } else {
         compile_error!("Unsupported architecture");
     }

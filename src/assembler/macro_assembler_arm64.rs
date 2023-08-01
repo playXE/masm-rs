@@ -11,7 +11,9 @@ use super::abstract_macro_assembler::{
     PreIndexAddress, Scale,
 };
 use super::arm64assembler::*;
-use super::assembler_common::{is_int, is_uint12, SIMDLane, mask8_on_condition_res, is_unsigned_res, mask16_on_condition_res};
+use super::assembler_common::{
+    is_int, is_uint12, is_unsigned_res, mask16_on_condition_res, mask8_on_condition_res, SIMDLane,
+};
 use super::buffer::AssemblerLabel;
 
 pub struct MacroAssemblerARM64 {
@@ -122,6 +124,18 @@ impl MacroAssemblerARM64 {
 
     pub const fn should_blind_for_specific_arch64(x: u64) -> bool {
         x >= 0x00ffffff
+    }
+
+    pub fn new() -> Self {
+        Self {
+            masm: AbstractMacroAssembler::new(),
+            data_temp_register: CachedTempRegister::new(Self::DATA_TEMP_REGISTER),
+            memory_temp_register: CachedTempRegister::new(Self::MEMORY_TEMP_REGISTER),
+        }
+    }
+
+    pub fn jumps_to_link(&mut self) -> &[LinkRecord] {
+        self.assembler.jumps_to_link()
     }
 
     pub fn add32_rrr(&mut self, a: impl Into<Operand>, mut b: u8, dst: u8) {
@@ -2676,7 +2690,7 @@ impl MacroAssemblerARM64 {
     }
 
     pub fn breakpoint(&mut self) {
-        todo!()
+        self.assembler.brk(0xc471)
     }
 
     pub fn abs_double(&mut self, src: u8, dest: u8) {
@@ -4760,7 +4774,7 @@ impl MacroAssemblerARM64 {
         &mut self,
         cond: ResultCondition,
         address: impl Into<Operand>,
-        mask: i32 
+        mask: i32,
     ) -> Jump {
         match address.into() {
             Operand::Address(address) => {
@@ -4799,7 +4813,7 @@ impl MacroAssemblerARM64 {
                 self.branch_test32(cond, Self::MEMORY_TEMP_REGISTER, mask8)
             }
 
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
@@ -4807,7 +4821,7 @@ impl MacroAssemblerARM64 {
         &mut self,
         cond: ResultCondition,
         address: impl Into<Operand>,
-        mask: i32 
+        mask: i32,
     ) -> Jump {
         match address.into() {
             Operand::Address(address) => {
@@ -4846,7 +4860,7 @@ impl MacroAssemblerARM64 {
                 self.branch_test32(cond, Self::MEMORY_TEMP_REGISTER, mask8)
             }
 
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
@@ -4855,7 +4869,7 @@ impl MacroAssemblerARM64 {
         cond: ResultCondition,
         op1: u8,
         op2: impl Into<Operand>,
-        dest: u8 
+        dest: u8,
     ) -> Jump {
         match op2.into() {
             Operand::Register(op2) => {
@@ -4878,8 +4892,8 @@ impl MacroAssemblerARM64 {
                     self.branch_add32_rrr(cond, op1, r, dest)
                 }
             }
-            
-            _ => unreachable!()
+
+            _ => unreachable!(),
         }
     }
 
@@ -4887,7 +4901,7 @@ impl MacroAssemblerARM64 {
         &mut self,
         cond: ResultCondition,
         src: impl Into<Operand>,
-        dest: impl Into<Operand>
+        dest: impl Into<Operand>,
     ) -> Jump {
         match (src.into(), dest.into()) {
             (Operand::Register(src), Operand::Register(dest)) => {
@@ -4917,7 +4931,8 @@ impl MacroAssemblerARM64 {
                 } else {
                     let r = self.get_cached_memory_temp_register_id_and_invalidate();
                     self.mov(imm, r);
-                    self.assembler.add::<32, true>(r, r, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler
+                        .add::<32, true>(r, r, Self::MEMORY_TEMP_REGISTER);
                 }
 
                 self.store32(r, dest);
@@ -4937,24 +4952,24 @@ impl MacroAssemblerARM64 {
                 } else {
                     let r = self.get_cached_memory_temp_register_id_and_invalidate();
                     self.mov(imm, r);
-                    self.assembler.add::<32, true>(r, r, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler
+                        .add::<32, true>(r, r, Self::MEMORY_TEMP_REGISTER);
                 }
 
                 self.store32(r, dest);
                 self.make_branch_res(cond)
             }
 
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
-    
     pub fn branch_add64_rrr(
         &mut self,
         cond: ResultCondition,
         op1: u8,
         op2: impl Into<Operand>,
-        dest: u8 
+        dest: u8,
     ) -> Jump {
         match op2.into() {
             Operand::Register(op2) => {
@@ -4977,8 +4992,8 @@ impl MacroAssemblerARM64 {
                     self.branch_add64_rrr(cond, op1, r, dest)
                 }
             }
-            
-            _ => unreachable!()
+
+            _ => unreachable!(),
         }
     }
 
@@ -4986,7 +5001,7 @@ impl MacroAssemblerARM64 {
         &mut self,
         cond: ResultCondition,
         src: impl Into<Operand>,
-        dest: impl Into<Operand>
+        dest: impl Into<Operand>,
     ) -> Jump {
         match (src.into(), dest.into()) {
             (Operand::Register(src), Operand::Register(dest)) => {
@@ -5016,7 +5031,8 @@ impl MacroAssemblerARM64 {
                 } else {
                     let r = self.get_cached_memory_temp_register_id_and_invalidate();
                     self.mov(imm, r);
-                    self.assembler.add::<64, true>(r, r, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler
+                        .add::<64, true>(r, r, Self::MEMORY_TEMP_REGISTER);
                 }
 
                 self.store64(r, dest);
@@ -5036,14 +5052,15 @@ impl MacroAssemblerARM64 {
                 } else {
                     let r = self.get_cached_memory_temp_register_id_and_invalidate();
                     self.mov(imm, r);
-                    self.assembler.add::<64, true>(r, r, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler
+                        .add::<64, true>(r, r, Self::MEMORY_TEMP_REGISTER);
                 }
 
                 self.store64(r, dest);
                 self.make_branch_res(cond)
             }
 
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
@@ -5052,7 +5069,7 @@ impl MacroAssemblerARM64 {
         cond: ResultCondition,
         op1: u8,
         op2: impl Into<Operand>,
-        dest: u8 
+        dest: u8,
     ) -> Jump {
         match op2.into() {
             Operand::Register(op2) => {
@@ -5075,8 +5092,8 @@ impl MacroAssemblerARM64 {
                     self.branch_sub32_rrr(cond, op1, r, dest)
                 }
             }
-            
-            _ => unreachable!()
+
+            _ => unreachable!(),
         }
     }
 
@@ -5084,7 +5101,7 @@ impl MacroAssemblerARM64 {
         &mut self,
         cond: ResultCondition,
         src: impl Into<Operand>,
-        dest: impl Into<Operand>
+        dest: impl Into<Operand>,
     ) -> Jump {
         match (src.into(), dest.into()) {
             (Operand::Register(src), Operand::Register(dest)) => {
@@ -5114,7 +5131,8 @@ impl MacroAssemblerARM64 {
                 } else {
                     let r = self.get_cached_memory_temp_register_id_and_invalidate();
                     self.mov(imm, r);
-                    self.assembler.add::<32, true>(r, r, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler
+                        .add::<32, true>(r, r, Self::MEMORY_TEMP_REGISTER);
                 }
 
                 self.store32(r, dest);
@@ -5134,14 +5152,15 @@ impl MacroAssemblerARM64 {
                 } else {
                     let r = self.get_cached_memory_temp_register_id_and_invalidate();
                     self.mov(imm, r);
-                    self.assembler.add::<32, true>(r, r, Self::MEMORY_TEMP_REGISTER);
+                    self.assembler
+                        .add::<32, true>(r, r, Self::MEMORY_TEMP_REGISTER);
                 }
 
                 self.store32(r, dest);
                 self.make_branch_res(cond)
             }
 
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
@@ -5151,6 +5170,10 @@ impl MacroAssemblerARM64 {
         let mut j = Jump::new(label);
         j.typ = JumpType::NoConditionFixedSize;
         j
+    }
+
+    pub fn ret(&mut self) {
+        self.assembler.ret(lr);
     }
 
     pub unsafe fn link_call(code: *mut u8, call: Call, function: *const u8) {

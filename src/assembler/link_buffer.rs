@@ -225,26 +225,155 @@ impl LinkBuffer {
         self.code()
     }
 
+    #[cfg(target_arch = "aarch64")]
+    fn copy_and_compact_link_code(&mut self, macroassembler: &mut TargetMacroAssembler) -> Result<(), jit_allocator::Error> {
+        use std::mem::size_of;
+        self.allocate(macroassembler)?;
+        if self.did_fail_to_allocate() {
+            return Ok(());
+        }
+        protect_jit_memory(ProtectJitAccess::ReadWrite);
+        let initial_size = macroassembler.code_size();
+        let mut jumps_to_link = macroassembler.jumps_to_link().to_vec();
+        let mut assembler_storage = macroassembler.assembler.buffer_mut().release_storage();
+        let in_data = assembler_storage.buffer();
+        let code_out_data = self.code;
+        let jump_count = jumps_to_link.len();
+        let mut read_ptr = 0;
+        let mut write_ptr = 0;
+        let storage = assembler_storage.buffer().cast::<i32>();
+  
+        unsafe {
+            let executable_offset_for = |loc: i32| -> i32 {
+                if loc < size_of::<i32>() as i32 {
+                    return 0;
+                }
+    
+                storage.add(loc as usize / size_of::<i32>() - 1).read()
+            };
+            for i in 0..jump_count {
+                let offset = read_ptr - write_ptr;
+                
+                let region_size = jumps_to_link[i].from() as isize - read_ptr as isize;
+                let mut copy_source = in_data.offset(read_ptr as _).cast::<i32>();
+                let copy_end = in_data.offset(read_ptr as isize + region_size).cast::<i32>();
+                let mut copy_dst = code_out_data.offset(write_ptr as _).cast::<i32>();
+
+                while copy_source != copy_end {
+                    copy_dst.write(copy_source.read());
+                 
+                    copy_dst = copy_dst.add(1);
+                    copy_source = copy_source.add(1);
+                }
+
+                Self::record_link_offsets(storage, read_ptr, jumps_to_link[i].from() as _, offset);
+
+                read_ptr += region_size as i32;
+                write_ptr += region_size as i32;
+
+                let to = jumps_to_link[i].to();
+
+                let target = if to >= jumps_to_link[i].from() as isize {
+                    code_out_data.offset(to - offset as isize)
+                } else {
+                    let off = executable_offset_for(to as _);
+                  
+                    code_out_data.offset(to - executable_offset_for(to as _) as isize)
+                };
+                TargetAssembler::compute_jump_type(&mut jumps_to_link[i], code_out_data.offset(write_ptr as _), target);
+                jumps_to_link[i].set_from(write_ptr as _);  
+            }
+
+
+            let read = |ptr: *const i32| -> i32 { ptr.read() };
+
+            let mut dst = code_out_data.add(write_ptr as _).cast::<i32>();
+            let mut src = in_data.add(read_ptr as _).cast::<i32>();
+            let bytes = (initial_size as isize - read_ptr as isize) as usize;
+            let mut i = 0;
+            while i < bytes {
+                let insn = read(src);
+                src = src.add(1);
+                dst.write(insn);
+             
+                dst = dst.add(1);
+                i += size_of::<i32>();
+            }
+
+            
+            Self::record_link_offsets(storage, read_ptr, initial_size as _, read_ptr - write_ptr);
+            
+            for i in 0..jump_count {
+                let location = code_out_data.offset(jumps_to_link[i].from() as isize);
+                let to = jumps_to_link[i].to();
+
+                let target = code_out_data
+                    .offset(to as isize)
+                    .offset(-(executable_offset_for(to as _) as isize));
+
+                TargetAssembler::link(
+                    &jumps_to_link[i],
+                    code_out_data.offset(jumps_to_link[i].from() as isize),
+                    location.cast(),
+                    target.cast(),
+                );
+            }
+
+            let compact_size = write_ptr + initial_size as i32 - read_ptr;
+            let nop_size_in_bytes = initial_size - compact_size as usize;
+            
+            TargetAssembler::fill_nops(code_out_data.add(compact_size as _), nop_size_in_bytes);
+
+            flush_instruction_cache(self.code_rx, self.size);
+            protect_jit_memory(ProtectJitAccess::ReadExecute);
+
+            Ok(())
+        }
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    unsafe fn record_link_offsets(
+        assembler_data: *mut i32,
+        region_start: i32,
+        region_end: i32,
+        offset: i32,
+    ) {
+        let mut ptr = region_start / 4;
+        let end = region_end / 4;
+
+        let offsets = assembler_data;
+
+        while ptr < end {
+            offsets.offset(ptr as isize).write(offset);
+            ptr += 1;
+        }
+    }
+
     pub fn link_code(
         &mut self,
         macro_assembler: &mut TargetMacroAssembler,
     ) -> Result<(), jit_allocator::Error> {
         macro_assembler.pad_before_patch();
+        #[cfg(not(target_arch="aarch64"))]
+        {
+            self.allocate(macro_assembler)?;
+            if !self.did_allocate {
+                return Ok(());
+            }
 
-        self.allocate(macro_assembler)?;
-        if !self.did_allocate {
-            return Ok(());
+            let buffer = macro_assembler.assembler.buffer().data();
+
+            unsafe {
+                protect_jit_memory(ProtectJitAccess::ReadWrite);
+                std::ptr::copy_nonoverlapping(buffer.as_ptr(), self.code, buffer.len());
+                protect_jit_memory(ProtectJitAccess::ReadExecute);
+                flush_instruction_cache(self.code_rx, self.size);
+            }
         }
-
-        let buffer = macro_assembler.assembler.buffer().data();
-
-        unsafe {
-            protect_jit_memory(ProtectJitAccess::ReadWrite);
-            std::ptr::copy_nonoverlapping(buffer.as_ptr(), self.code, buffer.len());
-            protect_jit_memory(ProtectJitAccess::ReadExecute);
-            flush_instruction_cache(self.code_rx, self.size);
+        #[cfg(target_arch = "aarch64")]
+        {
+            self.copy_and_compact_link_code(macro_assembler)?;
         }
-
         self.link_tasks = std::mem::take(&mut macro_assembler.link_tasks);
         self.late_link_tasks = std::mem::take(&mut macro_assembler.late_link_tasks);
 
