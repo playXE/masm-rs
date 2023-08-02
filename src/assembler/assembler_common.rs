@@ -1,4 +1,4 @@
-use super::macro_assembler_arm64::{RelationalCondition, ResultCondition};
+use super::{RelationalCondition, ResultCondition};
 
 pub const fn is_uint12(x: i32) -> bool {
     (x & !0xfff) == 0
