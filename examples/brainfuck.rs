@@ -166,9 +166,9 @@ impl BfJIT {
                         Address::new(NON_PRESERVED_NON_RETURN_GPR, 0),
                         ARGUMENT_GPR0,
                     );
-                    masm.push(NON_PRESERVED_NON_RETURN_GPR);
+                    masm.push_to_save(NON_PRESERVED_NON_RETURN_GPR);
                     masm.call_op(Some(AbsoluteAddress::new(putchar as _)));
-                    masm.pop(NON_PRESERVED_NON_RETURN_GPR);
+                    masm.pop_to_restore(NON_PRESERVED_NON_RETURN_GPR);
                 }
 
                 Token::Input => {
@@ -184,11 +184,13 @@ impl BfJIT {
 
                 Token::LoopBegin => {
                     masm.comment("loop begin");
-                    let jend = masm.branch8(
+                    masm.load8(Address::new(NON_PRESERVED_NON_RETURN_GPR, 0), T0);
+                    let jend = masm.branch32(RelationalCondition::Equal, T0, 0i32);
+                    /*let jend = masm.branch8(
                         RelationalCondition::Equal,
                         Address::new(NON_PRESERVED_NON_RETURN_GPR, 0),
                         0,
-                    );
+                    );*/
                     let start = masm.label();
 
                     jmps_to_end.push((start, jend));
@@ -231,7 +233,7 @@ impl BfJIT {
         let mut fmt = String::new();
 
         let code = buffer
-            .finalize_with_disassembly(disasm, "brainfuck", &mut fmt)
+            .finalize_with_disassembly(true, "brainfuck", &mut fmt)
             .unwrap();
 
         println!("{}", fmt);
@@ -241,6 +243,7 @@ impl BfJIT {
 }
 
 extern "C" fn putchar(x: u8) {
+   // println!("putchar {:x} '{}'", x, x as char);
     let mut out = ::std::io::stdout();
     out.write_all(&[x]).unwrap();
     out.flush().unwrap();

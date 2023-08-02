@@ -6333,6 +6333,7 @@ impl ARM64Assembler {
         to: *const u8,
     ) {
         let offset = (to as isize).wrapping_sub(from_instruction as isize) >> 2;
+       
         let use_direct = is_int::<19>(offset as _);
 
         if use_direct || direct {
@@ -6574,8 +6575,8 @@ impl ARM64Assembler {
                     record.condition,
                     record.is_64bit,
                     record.compare_register,
-                    from.cast(),
-                    from_instruction,
+                    from.cast::<i32>().sub(1),
+                    from_instruction.sub(1),
                     to,
                 );
             }
@@ -6598,8 +6599,8 @@ impl ARM64Assembler {
                     record.condition,
                     record.bit_number as _,
                     record.compare_register,
-                    from.cast(),
-                    from_instruction,
+                    from.cast::<i32>().sub(1),
+                    from_instruction.sub(1),
                     to,
                 );
             }

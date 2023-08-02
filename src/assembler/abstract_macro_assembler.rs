@@ -489,6 +489,7 @@ impl Jump {
             if self.typ == JumpType::CompareAndBranch
                 || self.typ == JumpType::CompareAndBranchFixedSize
             {
+                
                 masm.link_jump_cmp(
                     self.label,
                     label,

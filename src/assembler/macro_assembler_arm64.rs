@@ -4509,7 +4509,7 @@ impl MacroAssemblerARM64 {
     ) -> Jump {
         match (src.into(), mask.into()) {
             (Operand::Register(src), Operand::Imm32(mask)) => {
-                if mask == -1 {
+                if mask == -1 { 
                     if matches!(cond, ResultCondition::Zero | ResultCondition::NonZero) {
                         return self.make_compare_and_branch::<32>(unsafe { transmute(cond) }, src);
                     }
@@ -4518,6 +4518,7 @@ impl MacroAssemblerARM64 {
                 } else if has_one_bit_set(mask)
                     && matches!(cond, ResultCondition::Zero | ResultCondition::NonZero)
                 {
+                   
                     return self.make_test_bit_and_branch(
                         src,
                         mask.trailing_zeros() as _,
@@ -4533,6 +4534,7 @@ impl MacroAssemblerARM64 {
 
                     let r = self.get_cached_data_temp_register_id_and_invalidate();
                     self.mov(mask, r);
+                    
                     self.assembler.tst::<32>(src, r);
                 }
                 return self.make_branch_res(cond);
@@ -5403,7 +5405,7 @@ impl MacroAssemblerARM64 {
                 }
                 Operand::AbsoluteAddress(address) => {
                     let tmp = self.get_cached_data_temp_register_id_and_invalidate();
-                    self.load64(address, tmp);
+                    self.mov(address, tmp);
                     self.invalidate_all_temp_registers();
                     self.assembler.blr(tmp);
                     Some(Call::new(
@@ -6118,8 +6120,10 @@ impl MacroAssemblerARM64 {
         let label = self.assembler.label_ignoring_watchpoints();
         self.assembler.nop();
         let mut j = Jump::new(label);
-        j.typ = JumpType::CompareAndBranchFixedSize;
+        j.typ = JumpType::CompareAndBranchFixedSize;    
         j.condition = unsafe { transmute(cond) };
+        j.is_64bit = DATASIZE == 64;
+        j.compare_register = reg;
         j
     }
 
@@ -6137,6 +6141,8 @@ impl MacroAssemblerARM64 {
         let mut j = Jump::new(label);
         j.typ = JumpType::TestBitFixedSize;
         j.condition = unsafe { transmute(cond) };
+        j.compare_register = reg;
+        j.bit_number = bit as _;
         j
     }
 

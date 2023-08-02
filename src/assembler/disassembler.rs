@@ -61,13 +61,7 @@ pub unsafe fn try_to_disassemble<W: std::fmt::Write>(
         let code = std::slice::from_raw_parts(code, size);
         
         let insns = cs.disasm_all(code, code.as_ptr() as _).expect("failed to disassemble");
-        unsafe {
-            let code_words = std::slice::from_raw_parts(code.as_ptr().cast::<u32>(),size / 4);
-            for word in code_words {
-                write!(out, "{}{:p}: 0x{:x}\n", prefix, word, word )?;
-            }
-           
-        }
+
         for insn in insns.iter() {
             write!(out, "{}0x{:x}: {} {}\n", prefix, insn.address(), insn.mnemonic().unwrap(), insn.op_str().unwrap())?;
         }

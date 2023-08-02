@@ -1,5 +1,6 @@
 
 use macroassembler::assembler::TargetMacroAssembler;
+use macroassembler::assembler::abstract_macro_assembler::AbsoluteAddress;
 use macroassembler::assembler::arm64assembler::zr;
 use macroassembler::assembler::macro_assembler_arm64::RelationalCondition;
 use macroassembler::assembler::{macro_assembler_arm64::MacroAssemblerARM64, link_buffer::LinkBuffer};
@@ -22,20 +23,8 @@ fn main() {
     let i = T2;
     let x = ARGUMENT_GPR0;
     masm.emit_function_prologue();
-    /*masm.mov(1i32, result);
-    masm.mov(1i32, i);
-    
-    let loop_start = masm.label();
-    let br = masm.branch32(RelationalCondition::GreaterThan, i, x);
-    masm.mul32(i, result);  
-    masm.add32(1i32, i);
-    masm.jump().link_to(&mut masm, loop_start);
-
-    br.link(&mut masm);
-    masm.mov(result, RETURN_VALUE_GPR);*/
-    masm.push_to_save(result);
-    masm.pop_to_restore(result);
-
+    masm.mov(5i32, ARGUMENT_GPR0);
+    masm.call_op(Some(AbsoluteAddress::new(iter_fac as _)));
     masm.emit_function_epilogue();
     masm.ret();
 
@@ -46,9 +35,9 @@ fn main() {
 
     println!("Code: {}", out);
 
-    let f: extern "C" fn() = unsafe { std::mem::transmute(code.start()) };
-    println!("{:p}", code.start());
-    f();
+    let f: extern "C" fn() -> u64 = unsafe { std::mem::transmute(code.start()) };
+    println!("{:p}", iter_fac as *const u8);
+    println!("{}", f());
     drop(code);
     println!("hi");
 
