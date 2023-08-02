@@ -1,11 +1,6 @@
-use std::{
-    f32::consts::E,
-    ops::{Deref, DerefMut},
-};
+use std::ops::{Deref, DerefMut};
 
-use num_traits::ops::inv;
-
-use super::{abstract_macro_assembler::*, buffer::AssemblerLabel, riscv64assembler::*};
+use super::{abstract_macro_assembler::*, riscv64assembler::*};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
@@ -623,7 +618,7 @@ impl MacroAssemblerRISCV64 {
             .slli(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 8);
         self.assembler.srli(reg, reg, 8);
 
-        for i in 0..2 {
+        for _ in 0..2 {
             self.assembler.andi(Self::MEMORY_TEMP_REGISTER, reg, 0xff);
             self.assembler.or(
                 Self::DATA_TEMP_REGISTER,
@@ -646,7 +641,7 @@ impl MacroAssemblerRISCV64 {
             .slli(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, 8);
         self.assembler.srli(reg, reg, 8);
 
-        for i in 0..6 {
+        for _ in 0..6 {
             self.assembler.andi(Self::MEMORY_TEMP_REGISTER, reg, 0xff);
             self.assembler.or(
                 Self::DATA_TEMP_REGISTER,
@@ -2370,14 +2365,12 @@ impl MacroAssemblerRISCV64 {
         rhs: impl Into<Operand>,
     ) -> Jump {
         match (lhs.into(), rhs.into()) {
-            (Operand::Register(lhs), Operand::Register(rhs)) => {
-                self.make_branch(cond, Self::DATA_TEMP_REGISTER, Self::MEMORY_TEMP_REGISTER)
-            }
+            (Operand::Register(lhs), Operand::Register(rhs)) => self.make_branch(cond, lhs, rhs),
 
             (Operand::Register(lhs), Operand::Imm32(imm)) => {
                 self.load_immediate32(imm, Self::MEMORY_TEMP_REGISTER);
 
-                self.make_branch(cond, Self::DATA_TEMP_REGISTER, Self::MEMORY_TEMP_REGISTER)
+                self.make_branch(cond, lhs, Self::MEMORY_TEMP_REGISTER)
             }
 
             (Operand::Register(lhs), Operand::Address(address)) => {
@@ -2388,7 +2381,7 @@ impl MacroAssemblerRISCV64 {
                     resolution.offset,
                 );
 
-                self.make_branch(cond, Self::DATA_TEMP_REGISTER, Self::MEMORY_TEMP_REGISTER)
+                self.make_branch(cond, lhs, Self::MEMORY_TEMP_REGISTER)
             }
 
             (Operand::Address(address), Operand::Register(rhs)) => {
@@ -2396,7 +2389,7 @@ impl MacroAssemblerRISCV64 {
                 self.assembler
                     .ld(Self::DATA_TEMP_REGISTER, resolution.base, resolution.offset);
 
-                self.make_branch(cond, Self::DATA_TEMP_REGISTER, Self::MEMORY_TEMP_REGISTER)
+                self.make_branch(cond, Self::DATA_TEMP_REGISTER, rhs)
             }
 
             (Operand::Address(address), Operand::Imm32(imm)) => {
@@ -2413,7 +2406,7 @@ impl MacroAssemblerRISCV64 {
                 self.assembler
                     .ld(Self::MEMORY_TEMP_REGISTER, Self::MEMORY_TEMP_REGISTER, 0);
 
-                self.make_branch(cond, Self::MEMORY_TEMP_REGISTER, Self::DATA_TEMP_REGISTER)
+                self.make_branch(cond, Self::MEMORY_TEMP_REGISTER, rhs)
             }
 
             (Operand::BaseIndex(address), Operand::Imm32(imm)) => {
@@ -3218,7 +3211,7 @@ impl MacroAssemblerRISCV64 {
         match (lhs.into(), rhs.into()) {
             (Operand::Register(lhs), Operand::Register(rhs)) => {
                 self.assembler
-                    .and(Self::DATA_TEMP_REGISTER, Self::DATA_TEMP_REGISTER, rhs);
+                    .and(Self::DATA_TEMP_REGISTER, lhs, rhs);
                 self.branch_test_finalize(cond, Self::DATA_TEMP_REGISTER)
             }
 
@@ -4101,6 +4094,32 @@ impl MacroAssemblerRISCV64 {
     pub fn push(&mut self, src: u8) {
         self.assembler.addi(sp, sp, -8);
         self.assembler.sd(sp, src, 0);
+    }
+
+    pub fn push_to_save(&mut self, src: impl Into<Operand>) {
+        match src.into() {
+            Operand::Address(address) => {
+                let resolution = self.resolve_address(address, Self::MEMORY_TEMP_REGISTER);
+                self.assembler
+                    .ld(Self::DATA_TEMP_REGISTER, resolution.base, resolution.offset);
+                self.push(Self::DATA_TEMP_REGISTER)
+            }
+
+            Operand::Register(reg) => {
+                self.push(reg);
+            }
+
+            Operand::Imm32(imm) => {
+                self.load_immediate64(imm as _, Self::DATA_TEMP_REGISTER);
+                self.push(Self::DATA_TEMP_REGISTER);
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn pop_to_restore(&mut self, reg: u8) {
+        self.pop(reg);
     }
 
     pub fn push_pair(&mut self, src1: u8, src2: u8) {

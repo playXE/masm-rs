@@ -1,6 +1,6 @@
 [package]
 name = "macroassembler"
-version = "0.1.1"
+version = "1.0.0"
 edition = "2021"
 authors = ["Adel Prokurov <adel.prokurov@gmail.com>"]
 license = "MIT OR Apache-2.0"

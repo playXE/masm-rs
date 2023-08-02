@@ -2494,6 +2494,28 @@ impl MacroAssemblerX86Common {
         self.assembler.pop_r(dest);
     }
 
+    pub fn push_to_save(&mut self, src: impl Into<Operand>) {
+        match src.into() {
+            Operand::Address(address) => {
+                self.assembler.push_m(address.offset, address.base)
+            }
+
+            Operand::Register(reg) => {
+                self.assembler.push_r(reg);
+            }
+
+            Operand::Imm32(imm) => {
+                self.assembler.push_i32(imm);
+            }
+
+            _ => unreachable!()
+        }
+    }
+
+    pub fn pop_to_restore(&mut self, dest: u8) {
+        self.assembler.pop_r(dest);
+    }
+
     pub fn push(&mut self, src: impl Into<Operand>) {
         match src.into() {
             Operand::Register(src) => self.assembler.push_r(src),

@@ -233,7 +233,7 @@ impl BfJIT {
         let mut fmt = String::new();
 
         let code = buffer
-            .finalize_with_disassembly(true, "brainfuck", &mut fmt)
+            .finalize_with_disassembly(disasm, "brainfuck", &mut fmt)
             .unwrap();
 
         println!("{}", fmt);
