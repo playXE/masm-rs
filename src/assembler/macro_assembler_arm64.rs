@@ -12,7 +12,8 @@ use super::abstract_macro_assembler::{
 };
 use super::arm64assembler::*;
 use super::assembler_common::{
-    is_int, is_uint12, is_unsigned_res, mask16_on_condition_res, mask8_on_condition_res, SIMDLane,
+    is_uint12, is_unsigned_rel, is_unsigned_res, mask16_on_condition_res, mask8_on_condition_rel,
+    mask8_on_condition_res, SIMDLane,
 };
 use super::buffer::AssemblerLabel;
 
@@ -136,6 +137,39 @@ impl MacroAssemblerARM64 {
 
     pub fn jumps_to_link(&mut self) -> &[LinkRecord] {
         self.assembler.jumps_to_link()
+    }
+
+    pub fn tag_ptr(&mut self, tag: u8, target: u8) {
+        if target == lr && tag == sp {
+            self.assembler.pacibsp();
+            return;
+        }
+        self.assembler.pacib(target, tag);
+        return;
+    }
+
+    pub fn tag_ptr_imm(&mut self, tag: i64, target: u8) {
+        let r = self.get_cached_data_temp_register_id_and_invalidate();
+        self.mov(tag, r);
+        self.tag_ptr(r, target);
+    }
+
+    pub fn tag_return_address(&mut self, _: u8) {
+        self.tag_ptr(sp ,lr);
+    }
+
+    pub fn untag_return_address(&mut self, _: u8) {
+        self.untag_ptr(sp, lr);
+    }
+
+    pub fn untag_ptr(&mut self, tag: u8, target: u8) {
+        self.assembler.autib(target, tag);
+    }
+
+    pub fn untag_ptr_imm(&mut self, tag: i64, target: u8) {
+        let r = self.get_cached_data_temp_register_id_and_invalidate();
+        self.mov(tag, r);
+        self.untag_ptr(r, target);
     }
 
     pub fn add32_rrr(&mut self, a: impl Into<Operand>, mut b: u8, dst: u8) {
@@ -1456,8 +1490,10 @@ impl MacroAssemblerARM64 {
             (Operand::Register(left), Operand::Imm32(imm)) => {
                 if let Some((u12, shift, inverted)) = Self::try_extract_shifted_imm(imm as _) {
                     if !inverted {
+                        
                         self.assembler.sub_imm::<64, false>(dest, left, u12, shift);
                     } else {
+                        
                         self.assembler.add_imm::<64, false>(dest, left, u12, shift);
                     }
                 } else {
@@ -2305,12 +2341,14 @@ impl MacroAssemblerARM64 {
         match (src.into(), dest.into()) {
             (Operand::Register(src), Operand::Address(address)) => {
                 if self.try_store_with_offset::<64>(src, address.base, address.offset) {
+                    
                     return;
                 }
 
                 let r = self.get_cached_memory_temp_register_id_and_invalidate();
-                self.assembler.str::<64>(src, address.base, r);
                 self.sign_extend32_to_64(address.offset, r);
+                self.assembler.str::<64>(src, address.base, r);
+                
             }
 
             (Operand::Register(src), Operand::BaseIndex(address)) => {
@@ -2481,7 +2519,7 @@ impl MacroAssemblerARM64 {
 
     pub fn load_pair64(&mut self, src: u8, offset: i32, dest1: u8, dest2: u8) {
         if ARM64Assembler::is_valid_ldp_imm::<64>(offset) {
-            self.assembler.ldp_imm::<64>(dest1, dest2, src, offset as _);
+            self.assembler.ldp_post::<64>(dest1, dest2, src, PairPostIndex(offset));
         } else {
             if src == dest1 {
                 self.load64(Address::new(src, offset + 8), dest2);
@@ -3900,19 +3938,23 @@ impl MacroAssemblerARM64 {
     }
 
     pub fn pop_to_restore(&mut self, dest: u8) {
-        self.assembler.ldr_post::<64>(dest, sp, PostIndex(16));
+        self.load64(Address::new(Self::STACK_POINTER_REGISTER, 0), dest);
+        self.add64(16i32, sp);
+        //self.assembler.ldr_post::<64>(dest, sp, PostIndex(16));
     }
 
     pub fn push_to_save(&mut self, src: impl Into<Operand>) {
         match src.into() {
             Operand::Address(address) => {
                 let r = self.get_cached_data_temp_register_id_and_invalidate();
-                self.load32(address, r);
+                self.load64(address, r);
                 self.push_to_save(r);
             }
 
             Operand::Register(src) => {
-                self.assembler.str_pre::<64>(src, sp, PreIndex(-16));
+                self.sub64(16i32, Self::STACK_POINTER_REGISTER);
+                self.store64(src, Address::new(Self::STACK_POINTER_REGISTER, 0));
+                //self.assembler.str_pre::<64>(src, sp, PreIndex(-16));
             }
 
             Operand::Imm32(imm) => {
@@ -4617,6 +4659,53 @@ impl MacroAssemblerARM64 {
         }
     }
 
+    pub fn branch8(
+        &mut self,
+        cond: RelationalCondition,
+        left: impl Into<Operand>,
+        right: i32,
+    ) -> Jump {
+        match left.into() {
+            Operand::Address(left) => {
+                let right8 = mask8_on_condition_rel(cond, right);
+                let tmp = self.get_cached_memory_temp_register_id_and_invalidate();
+                if is_unsigned_rel(cond) {
+                    self.load8(left, tmp);
+                } else {
+                    self.load8_signed_extend_to_32(left, tmp);
+                }
+
+                self.branch32(cond, tmp, right8)
+            }
+
+            Operand::BaseIndex(left) => {
+                let right8 = mask8_on_condition_rel(cond, right);
+                let tmp = self.get_cached_memory_temp_register_id_and_invalidate();
+                if is_unsigned_rel(cond) {
+                    self.load8(left, tmp);
+                } else {
+                    self.load8_signed_extend_to_32(left, tmp);
+                }
+
+                self.branch32(cond, tmp, right8)
+            }
+
+            Operand::AbsoluteAddress(left) => {
+                let right8 = mask8_on_condition_rel(cond, right);
+                let tmp = self.get_cached_memory_temp_register_id_and_invalidate();
+                if is_unsigned_rel(cond) {
+                    self.load8(left, tmp);
+                } else {
+                    self.load8_signed_extend_to_32(left, tmp);
+                }
+
+                self.branch32(cond, tmp, right8)
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
     pub fn branch32(
         &mut self,
         cond: RelationalCondition,
@@ -5110,7 +5199,7 @@ impl MacroAssemblerARM64 {
 
             (Operand::Address(src), Operand::Register(dest)) => {
                 let r = self.get_cached_data_temp_register_id_and_invalidate();
-                self.load64(src, r);
+                self.load32(src, r);
                 self.branch_sub32_rrr(cond, dest, r, dest)
             }
 
@@ -5164,6 +5253,106 @@ impl MacroAssemblerARM64 {
         }
     }
 
+    pub fn branch_sub64_rrr(
+        &mut self,
+        cond: ResultCondition,
+        op1: u8,
+        op2: impl Into<Operand>,
+        dest: u8,
+    ) -> Jump {
+        match op2.into() {
+            Operand::Register(op2) => {
+                self.assembler.sub::<32, true>(dest, op1, op2);
+                self.make_branch_res(cond)
+            }
+
+            Operand::Imm32(imm) => {
+                if let Some((u12, shift, inverted)) = Self::try_extract_shifted_imm(imm as _) {
+                    if !inverted {
+                        self.assembler.sub_imm::<64, true>(dest, op1, u12, shift);
+                    } else {
+                        self.assembler.add_imm::<64, true>(dest, op1, u12, shift);
+                    }
+
+                    self.make_branch_res(cond)
+                } else {
+                    let r = self.get_cached_data_temp_register_id_and_invalidate();
+                    self.sign_extend32_to_64(imm, r);
+                    self.branch_sub64_rrr(cond, op1, r, dest)
+                }
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn branch_sub64(
+        &mut self,
+        cond: ResultCondition,
+        src: impl Into<Operand>,
+        dest: impl Into<Operand>,
+    ) -> Jump {
+        match (src.into(), dest.into()) {
+            (Operand::Register(src), Operand::Register(dest)) => {
+                self.branch_sub64_rrr(cond, dest, src, dest)
+            }
+
+            (Operand::Address(src), Operand::Register(dest)) => {
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
+                self.load64(src, r);
+                self.branch_sub64_rrr(cond, dest, r, dest)
+            }
+
+            (Operand::Imm32(imm), Operand::Register(dest)) => {
+                self.branch_sub64_rrr(cond, dest, imm, dest)
+            }
+
+            (Operand::Imm32(imm), Operand::AbsoluteAddress(dest)) => {
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
+                self.load64(dest, r);
+
+                if let Some((u12, shift, inverted)) = Self::try_extract_shifted_imm(imm as _) {
+                    if !inverted {
+                        self.assembler.sub_imm::<64, true>(r, r, u12, shift);
+                    } else {
+                        self.assembler.add_imm::<64, true>(r, r, u12, shift);
+                    }
+                } else {
+                    let r = self.get_cached_memory_temp_register_id_and_invalidate();
+                    self.mov(imm, r);
+                    self.assembler
+                        .add::<32, true>(r, r, Self::MEMORY_TEMP_REGISTER);
+                }
+
+                self.store64(r, dest);
+                self.make_branch_res(cond)
+            }
+
+            (Operand::Imm32(imm), Operand::Address(dest)) => {
+                let r = self.get_cached_data_temp_register_id_and_invalidate();
+                self.load64(dest, r);
+
+                if let Some((u12, shift, inverted)) = Self::try_extract_shifted_imm(imm as _) {
+                    if !inverted {
+                        self.assembler.sub_imm::<64, true>(r, r, u12, shift);
+                    } else {
+                        self.assembler.add_imm::<64, true>(r, r, u12, shift);
+                    }
+                } else {
+                    let r = self.get_cached_memory_temp_register_id_and_invalidate();
+                    self.mov(imm, r);
+                    self.assembler
+                        .add::<64, true>(r, r, Self::MEMORY_TEMP_REGISTER);
+                }
+
+                self.store64(r, dest);
+                self.make_branch_res(cond)
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
     pub fn jump(&mut self) -> Jump {
         let label = self.assembler.label();
         self.assembler.b();
@@ -5174,6 +5363,59 @@ impl MacroAssemblerARM64 {
 
     pub fn ret(&mut self) {
         self.assembler.ret(lr);
+    }
+
+    pub fn call(&mut self) -> Call {
+        let pointer_label = self.assembler.label();
+        let r = self.get_cached_data_temp_register_id_and_invalidate();
+        self.move_with_fixed_width64(0, r);
+        self.invalidate_all_temp_registers();
+        self.assembler.blr(r);
+        let call_label = self.assembler.label();
+        assert!(
+            call_label.offset() as i32 - pointer_label.offset() as i32
+                == Self::REPATCH_OFFSET_CALL_TO_POINTER as i32
+        );
+        Call::new(call_label, Call::LINKABLE)
+    }
+
+    pub fn call_op(&mut self, op: Option<impl Into<Operand>>) -> Option<Call> {
+        match op {
+            Some(op) => match op.into() {
+                Operand::Register(r) => {
+                    self.invalidate_all_temp_registers();
+                    self.assembler.blr(r);
+                    Some(Call::new(
+                        self.assembler.label_ignoring_watchpoints(),
+                        Call::NONE,
+                    ))
+                }
+
+                Operand::Address(address) => {
+                    let r = self.get_cached_data_temp_register_id_and_invalidate();
+                    self.load64(address, r);
+                    self.invalidate_all_temp_registers();
+                    self.assembler.blr(r);
+                    Some(Call::new(
+                        self.assembler.label_ignoring_watchpoints(),
+                        Call::NONE,
+                    ))
+                }
+                Operand::AbsoluteAddress(address) => {
+                    let tmp = self.get_cached_data_temp_register_id_and_invalidate();
+                    self.load64(address, tmp);
+                    self.invalidate_all_temp_registers();
+                    self.assembler.blr(tmp);
+                    Some(Call::new(
+                        self.assembler.label_ignoring_watchpoints(),
+                        Call::NONE,
+                    ))
+                }
+
+                _ => unreachable!(),
+            },
+            None => Some(self.call()),
+        }
     }
 
     pub unsafe fn link_call(code: *mut u8, call: Call, function: *const u8) {
@@ -5710,6 +5952,7 @@ impl MacroAssemblerARM64 {
         }
 
         if can_encode_pimm_offset::<DATASIZE>(offset) {
+            
             self.store_unsigned_immediate::<DATASIZE>(rt, rn, offset as _);
             return true;
         }

@@ -10,6 +10,8 @@ pub trait AssemblyHelpers {
     fn restore_return_address_before_return(&mut self, op: impl Into<Operand>);
 }
 
+#[cfg(target_arch="aarch64")]
+use crate::assembler::arm64assembler::*;
 #[cfg(target_arch = "riscv64")]
 use crate::assembler::riscv64assembler::*;
 #[cfg(target_arch = "x86_64")]
@@ -72,5 +74,44 @@ impl AssemblyHelpers for TargetMacroAssembler {
 
     fn preserve_return_address_after_call(&mut self, reg: u8) {
         self.pop(reg);
+    }
+}
+
+#[cfg(target_arch="aarch64")]
+impl AssemblyHelpers for TargetMacroAssembler {
+    fn emit_function_prologue(&mut self) {
+        //self.tag_return_address(0);
+        self.sub64(16i32, Self::STACK_POINTER_REGISTER);
+        self.store_pair64(Self::FRAME_POINTER_REGISTER, Self::LINK_REGISTER, Self::STACK_POINTER_REGISTER, 0);
+        self.mov(Self::STACK_POINTER_REGISTER, Self::FRAME_POINTER_REGISTER);
+    }
+
+    fn emit_function_epilogue(&mut self) {
+        self.mov(Self::FRAME_POINTER_REGISTER, Self::STACK_POINTER_REGISTER);
+        self.emit_function_epilogue_with_empty_frame();
+    }
+
+    fn emit_function_epilogue_with_empty_frame(&mut self) {
+        self.load_pair64(Self::STACK_POINTER_REGISTER, 0, Self::FRAME_POINTER_REGISTER, Self::LINK_REGISTER);
+        self.add64(16i32, Self::STACK_POINTER_REGISTER);
+        
+    }
+
+    fn preserve_return_address_after_call(&mut self, reg: u8) {
+        self.mov(Self::LINK_REGISTER, reg);
+    }
+
+    fn restore_return_address_before_return(&mut self, op: impl Into<Operand>) {
+        match op.into() {
+            Operand::Register(reg) => {
+                self.mov(reg, Self::LINK_REGISTER);
+            }
+
+            Operand::Address(addr) => {
+                self.load64(addr, Self::LINK_REGISTER);
+            }
+
+            _ => unreachable!(),
+        }
     }
 }

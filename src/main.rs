@@ -1,7 +1,10 @@
 
+use macroassembler::assembler::TargetMacroAssembler;
+use macroassembler::assembler::arm64assembler::zr;
 use macroassembler::assembler::macro_assembler_arm64::RelationalCondition;
 use macroassembler::assembler::{macro_assembler_arm64::MacroAssemblerARM64, link_buffer::LinkBuffer};
 use macroassembler::jit::gpr_info::*;
+use macroassembler::jit::helpers::AssemblyHelpers;
 
 fn iter_fac(x: i32) -> i32 {
     let mut result = 1;
@@ -18,8 +21,8 @@ fn main() {
     let result = T1;
     let i = T2;
     let x = ARGUMENT_GPR0;
-
-    masm.mov(1i32, result);
+    masm.emit_function_prologue();
+    /*masm.mov(1i32, result);
     masm.mov(1i32, i);
     
     let loop_start = masm.label();
@@ -29,7 +32,12 @@ fn main() {
     masm.jump().link_to(&mut masm, loop_start);
 
     br.link(&mut masm);
-    masm.mov(result, RETURN_VALUE_GPR);
+    masm.mov(result, RETURN_VALUE_GPR);*/
+    masm.push_to_save(result);
+    masm.assembler.ldr::<64>(result, TargetMacroAssembler::STACK_POINTER_REGISTER, zr);
+    masm.pop_to_restore(result);
+
+    masm.emit_function_epilogue();
     masm.ret();
 
     let mut link = LinkBuffer::from_macro_assembler(&mut masm).unwrap();
@@ -39,7 +47,11 @@ fn main() {
 
     println!("Code: {}", out);
 
-    let f: extern "C" fn(i32) -> i32 = unsafe { std::mem::transmute(code.start()) };
+    let f: extern "C" fn() = unsafe { std::mem::transmute(code.start()) };
+    println!("{:p}", code.start());
+    f();
+    drop(code);
+    println!("hi");
 
-    println!("{}", f(5));
+    
 }

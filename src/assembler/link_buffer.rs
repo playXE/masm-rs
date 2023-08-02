@@ -276,7 +276,7 @@ impl LinkBuffer {
                 let target = if to >= jumps_to_link[i].from() as isize {
                     code_out_data.offset(to - offset as isize)
                 } else {
-                    let off = executable_offset_for(to as _);
+                    let _off = executable_offset_for(to as _);
                   
                     code_out_data.offset(to - executable_offset_for(to as _) as isize)
                 };
