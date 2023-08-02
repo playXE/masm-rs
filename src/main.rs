@@ -34,7 +34,6 @@ fn main() {
     br.link(&mut masm);
     masm.mov(result, RETURN_VALUE_GPR);*/
     masm.push_to_save(result);
-    masm.assembler.ldr::<64>(result, TargetMacroAssembler::STACK_POINTER_REGISTER, zr);
     masm.pop_to_restore(result);
 
     masm.emit_function_epilogue();

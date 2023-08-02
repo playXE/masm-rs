@@ -812,16 +812,18 @@ pub enum LogicalOp {
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash, PartialOrd, Ord)]
 #[repr(u8)]
 pub enum MemOp {
-    STORE = 4,
+    STORE,
     LOAD,
     STOREV128,
     LAODV128,
-    PREFETCH = 2,
-    LOADS32 = 3,
+    //PREFETCH = 2,
+    //LOADS32 = 3,
 }
 
 impl MemOp {
     pub const LOADS64: Self = Self::PREFETCH;
+    pub const PREFETCH: Self = Self::LOAD;
+    pub const LOADS32: Self = Self::LAODV128;
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash, PartialOrd, Ord)]
@@ -5828,8 +5830,12 @@ impl ARM64Assembler {
     ) -> i32 {
         assert!(option as usize & 2 != 0);
         println!("ldr x{} [x{}, x{}]", rt, rn, rm);
+        let x = 0x38200800  | (size as i32) << 30
+        | ((v as i32) << 26);
+        //| ((opc as i32) << 22);
+        println!("x = {:x}", x);
         0x38200800
-            | ((size as i32) << 30)
+            | (size as i32) << 30
             | ((v as i32) << 26)
             | ((opc as i32) << 22)
             | (Self::x_or_zr(rm) << 16)
@@ -5849,16 +5855,7 @@ impl ARM64Assembler {
         rn: u8,
         rt: u8,
     ) -> i32 {
-        Self::load_store_register_offset(
-            size,
-            v,
-            opc,
-            rm,
-            option,
-            s,
-            rn,
-            Self::x_or_zr(rt) as _,
-        )
+        Self::load_store_register_offset(size, v, opc, rm, option, s, rn, Self::x_or_zr(rt) as _)
     }
 
     const fn load_store_register_unscaled_immediate(
@@ -6749,17 +6746,16 @@ pub enum Group4Op {
     ERETAB = 0b0100 << 21 | 1 << 10 | 0b11111 << 5,
 }
 
-
 pub const fn encode_group1(op: Group1Op) -> i32 {
     (op as i32) | 0b1101 << 28 | 0b0101 << 24 | 0b011 << 16 | 0b0010 << 12 | 0b11111
 }
 
 pub const fn encode_group2(op: Group2Op, rn: u8, rd: u8, rm: u8) -> i32 {
-    op as i32 | 1 << 31 | 0b11010110 << 21 | (rm as i32) << 16 | (rn as i32) << 5 | rd as i32 
+    op as i32 | 1 << 31 | 0b11010110 << 21 | (rm as i32) << 16 | (rn as i32) << 5 | rd as i32
 }
 
 pub const fn encode_group4(op: Group4Op, rn: u8, rm: u8) -> i32 {
-    0b1101011 << 25 | op as i32 | 0b11111 << 16 | 0b00001 << 11 | (rn as i32) << 5 | rm as i32 
+    0b1101011 << 25 | op as i32 | 0b11111 << 16 | 0b00001 << 11 | (rn as i32) << 5 | rm as i32
 }
 
 const UNUSED_ID: u8 = 0b11111;
@@ -6781,39 +6777,39 @@ impl ARM64Assembler {
         self.insn(encode_group1(Group1Op::AUTIB1716))
     }
 
-    pub fn paciaz(&mut self,) {
+    pub fn paciaz(&mut self) {
         self.insn(encode_group1(Group1Op::PACIAZ));
     }
 
-    pub fn paciasp(&mut self,) {
+    pub fn paciasp(&mut self) {
         self.insn(encode_group1(Group1Op::PACIASP));
     }
 
-    pub fn pacibz(&mut self,) {
+    pub fn pacibz(&mut self) {
         self.insn(encode_group1(Group1Op::PACIBZ));
     }
 
-    pub fn pacibsp(&mut self,) {
+    pub fn pacibsp(&mut self) {
         self.insn(encode_group1(Group1Op::PACIBSP));
     }
 
-    pub fn autiaz(&mut self,) {
+    pub fn autiaz(&mut self) {
         self.insn(encode_group1(Group1Op::AUTIAZ));
     }
 
-    pub fn autiasp(&mut self,) {
+    pub fn autiasp(&mut self) {
         self.insn(encode_group1(Group1Op::AUTIASP));
     }
 
-    pub fn autibz(&mut self,) {
+    pub fn autibz(&mut self) {
         self.insn(encode_group1(Group1Op::AUTIBZ));
     }
 
-    pub fn autibsp(&mut self,) {
+    pub fn autibsp(&mut self) {
         self.insn(encode_group1(Group1Op::AUTIBSP));
     }
 
-    pub fn xpaclri(&mut self,) {
+    pub fn xpaclri(&mut self) {
         self.insn(encode_group1(Group1Op::XPACLRI));
     }
 
@@ -6892,9 +6888,4 @@ impl ARM64Assembler {
     pub fn pacga(&mut self, rd: u8, rn: u8, rm: u8) {
         self.insn(encode_group2(Group2Op::PACGA, rn, rd, rm));
     }
-
-
-
-
-
 }
