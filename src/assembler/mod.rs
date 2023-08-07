@@ -36,6 +36,7 @@ cfg_if! {
         #[macro_use]
         pub mod arm64registers;
         pub mod arm64assembler;
+        pub mod arm64disassembler;
         pub mod macro_assembler_arm64;
         pub use macro_assembler_arm64::{RelationalCondition, ZeroCondition, DoubleCondition, ResultCondition};
         pub type TargetAssembler = arm64assembler::ARM64Assembler;
