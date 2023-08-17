@@ -1,6 +1,6 @@
 [package]
 name = "macroassembler"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2021"
 authors = ["Adel Prokurov <adel.prokurov@gmail.com>"]
 license = "MIT OR Apache-2.0"
@@ -21,9 +21,9 @@ num-traits = "0.2"
 paste = "1.0"
 errno = "0.3"
 num = "0.4"
-capstone = "0.11"
+capstone = { version = "0.11", optional = true }
 [target.'cfg(target_arch="x86_64")'.dependencies]
-iced-x86 = { version = "1.13", features = ["decoder", "no_std", "gas"], default-features = false }
+iced-x86 = { version = "1.13", features = ["decoder", "no_std", "gas"], default-features = false, optional = true }
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = [
@@ -38,3 +38,7 @@ winapi = { version = "0.3", features = [
 
 [dev-dependencies]
 pico-args = "0.5"
+
+[features]
+x86-disasm = ["iced-x86"]
+arm-disasm = ["capstone"]

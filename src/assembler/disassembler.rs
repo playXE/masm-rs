@@ -5,8 +5,11 @@ pub unsafe fn try_to_disassemble<W: std::fmt::Write>(
     prefix: &str,
     out: &mut W,
 ) -> std::fmt::Result {
-    
-    #[cfg(target_arch = "x86_64")]
+    let _ = code;
+    let _ = size;
+    let _ = prefix;
+    let _ = out;
+    #[cfg(all(feature="x86-disasm", target_arch = "x86_64"))]
     unsafe {
         use super::assembly_comments::AssemblyCommentsRegistry;
 
@@ -47,7 +50,7 @@ pub unsafe fn try_to_disassemble<W: std::fmt::Write>(
         )?;
     }
 
-    #[cfg(target_arch="aarch64")]
+    #[cfg(all(feature="arm-disasm", target_arch="aarch64"))]
     {
         use capstone::prelude::*;
 
