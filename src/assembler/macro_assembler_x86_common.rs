@@ -768,10 +768,6 @@ impl MacroAssemblerX86Common {
                     .orl_mr_scaled(src.offset, src.base, src.index, src.scale as _, dest);
             }
 
-            (Operand::Address(src), Operand::BaseIndex(dest)) => {
-                self.assembler.orl_mr(src.offset, src.base, dest);
-            }
-
             (src, dest) => unreachable!("Invalid operands for or32: {:?}, {:?}", src, dest),
         }
     }
