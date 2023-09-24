@@ -763,6 +763,15 @@ impl MacroAssemblerX86Common {
                 self.or32(reg, Address::new(Self::SCRATCH_REGISTER, 0));
             }
 
+            (Operand::BaseIndex(src), Operand::Register(dest)) => {
+                self.assembler
+                    .orl_mr_scaled(src.offset, src.base, src.index, src.scale as _, dest);
+            }
+
+            (Operand::Address(src), Operand::BaseIndex(dest)) => {
+                self.assembler.orl_mr(src.offset, src.base, dest);
+            }
+
             (src, dest) => unreachable!("Invalid operands for or32: {:?}, {:?}", src, dest),
         }
     }
