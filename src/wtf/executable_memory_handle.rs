@@ -79,6 +79,20 @@ impl CodeRef {
         unsafe { self.start().add(self.size_in_bytes()) }
     }
 
+    pub fn start_rw(&self) -> Option<*mut u8> {
+        match self {
+            CodeRef::SelfManaged((_, _)) => None,
+            CodeRef::External(handle) => Some(handle.start_rw()),
+        }
+    }
+
+    pub fn end_rw(&self) -> Option<*mut u8> {
+        match self {
+            CodeRef::SelfManaged((_, _)) => None,
+            CodeRef::External(handle) => Some(handle.end_rw()),
+        }
+    }
+
     pub fn contains(&self, address: *const u8) -> bool {
         let start = self.start() as usize;
         let end = self.end() as usize;
