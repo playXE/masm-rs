@@ -335,10 +335,10 @@ impl MacroAssemblerX86Common {
         match (src.into(), shift_amount.into()) {
             (Operand::Register(src), Operand::Imm32(imm)) => {
                 if src == dest {
-                    self.lshift32(imm, dest);
+                    self.lshift64(imm, dest);
                 } else {
                     self.mov(src, dest);
-                    self.lshift32(imm, dest);
+                    self.lshift64(imm, dest);
                 }
             }
 
@@ -400,10 +400,10 @@ impl MacroAssemblerX86Common {
         match (src.into(), shift_amount.into()) {
             (Operand::Register(src), Operand::Imm32(imm)) => {
                 if src == dest {
-                    self.rshift32(imm, dest);
+                    self.rshift64(imm, dest);
                 } else {
                     self.mov(src, dest);
-                    self.rshift32(imm, dest);
+                    self.rshift64(imm, dest);
                 }
             }
 
@@ -465,10 +465,10 @@ impl MacroAssemblerX86Common {
         match (src.into(), shift_amount.into()) {
             (Operand::Register(src), Operand::Imm32(imm)) => {
                 if src == dest {
-                    self.urshift32(imm, dest);
+                    self.urshift64(imm, dest);
                 } else {
                     self.mov(src, dest);
-                    self.urshift32(imm, dest);
+                    self.urshift64(imm, dest);
                 }
             }
 
@@ -530,10 +530,10 @@ impl MacroAssemblerX86Common {
         match (src.into(), shift_amount.into()) {
             (Operand::Register(src), Operand::Imm32(imm)) => {
                 if src == dest {
-                    self.rotate_right32(imm, dest);
+                    self.rotate_right64(imm, dest);
                 } else {
                     self.mov(src, dest);
-                    self.rotate_right32(imm, dest);
+                    self.rotate_right64(imm, dest);
                 }
             }
 
@@ -597,10 +597,10 @@ impl MacroAssemblerX86Common {
         match (src.into(), shift_amount.into()) {
             (Operand::Register(src), Operand::Imm32(imm)) => {
                 if src == dest {
-                    self.rotate_left32(imm, dest);
+                    self.rotate_left64(imm, dest);
                 } else {
                     self.mov(src, dest);
-                    self.rotate_left32(imm, dest);
+                    self.rotate_left64(imm, dest);
                 }
             }
 
