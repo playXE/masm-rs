@@ -25,18 +25,13 @@ pub unsafe fn try_to_disassemble<W: std::fmt::Write>(
         for instruction in &mut decoder {
             let mut output = String::new();
             formatter.format(&instruction, &mut output);
-            if let Some(comment) =
-                AssemblyCommentsRegistry::singleton().comment(instruction.ip() as _)
-            {
-                writeln!(out, "; {}", comment)?;
-            }
-            write!(out, "{}0x{:x}: {}\n", prefix, instruction.ip(), output)?;
+            write!(out, "{}0x{:x}: {}", prefix, instruction.ip(), output)?;
 
-            /*if let Some(comment) = AssemblyCommentsRegistry::singleton().comment(instruction.ip() as _) {
+            if let Some(comment) = AssemblyCommentsRegistry::singleton().comment(instruction.ip() as _) {
                 write!(out, "; {}\n", comment)?;
             } else {
                 write!(out, "\n")?;
-            }*/
+            }
         }
     }
 

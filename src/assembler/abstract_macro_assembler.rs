@@ -489,7 +489,6 @@ impl Jump {
             if self.typ == JumpType::CompareAndBranch
                 || self.typ == JumpType::CompareAndBranchFixedSize
             {
-                
                 masm.link_jump_cmp(
                     self.label,
                     label,
@@ -756,7 +755,7 @@ impl AbstractMacroAssembler {
             link_tasks: Vec::new(),
             late_link_tasks: Vec::new(),
             comments: Vec::new(),
-            temp_register_valid_bits: 0
+            temp_register_valid_bits: 0,
         }
     }
 
@@ -767,7 +766,7 @@ impl AbstractMacroAssembler {
     pub fn clear_temp_register_valid(&mut self, bit: usize) {
         self.temp_register_valid_bits &= !bit;
     }
-    
+
     pub fn set_temp_register_valid(&mut self, bit: usize) {
         self.temp_register_valid_bits |= bit;
     }
@@ -837,7 +836,7 @@ impl Into<Location> for ConvertibleLoadLabel {
 pub struct CachedTempRegister {
     pub register_id: u8,
     pub value: isize,
-    pub valid_bit: usize 
+    pub valid_bit: usize,
 }
 
 impl CachedTempRegister {
@@ -871,7 +870,7 @@ impl CachedTempRegister {
         Self {
             register_id,
             value: 0,
-            valid_bit: 1 << register_id as usize
+            valid_bit: 1 << register_id as usize,
         }
     }
 }
