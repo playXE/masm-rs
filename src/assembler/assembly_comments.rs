@@ -1,7 +1,6 @@
 #![allow(dead_code)]
-use once_cell::sync::Lazy;
-use parking_lot::Mutex;
 use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock, PoisonError};
 
 pub type CommentMap = HashMap<usize, String>;
 
@@ -17,13 +16,12 @@ impl AssemblyCommentsRegistry {
     }
 
     pub fn singleton() -> &'static Self {
-        static INSTANCE: Lazy<AssemblyCommentsRegistry> =
-            Lazy::new(|| AssemblyCommentsRegistry::new());
-        &INSTANCE
+        static INSTANCE: OnceLock<AssemblyCommentsRegistry> = OnceLock::new();
+        INSTANCE.get_or_init(|| AssemblyCommentsRegistry::new())
     }
 
     pub fn comment<'a>(&self, in_code: *const u8) -> Option<String> {
-        let comments = self.lock.lock();
+        let comments = self.lock.lock().unwrap_or_else(PoisonError::into_inner);
 
         // search lower bound
         /*let (_, (end, comment_map)) = match comments.range(..=(in_code as usize)).next_back() {
@@ -52,7 +50,7 @@ impl AssemblyCommentsRegistry {
         let start = start as usize;
         let end = end as usize;
 
-        let mut comments = self.lock.lock();
+        let mut comments = self.lock.lock().unwrap_or_else(PoisonError::into_inner);
 
         /*let (found_end, _) = match comments.remove(&start) {
             Some(v) => v,
@@ -75,7 +73,7 @@ impl AssemblyCommentsRegistry {
         let start = start as usize;
         let end = end as usize;
 
-        let mut comments = self.lock.lock();
+        let mut comments = self.lock.lock().unwrap_or_else(PoisonError::into_inner);
         for (pos, comment) in new_comments.iter() {
             println!("{:x}: {}", pos, comment);
         }

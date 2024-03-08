@@ -1,14 +1,13 @@
 //! Direct port of `JavaScriptCore/jit` module.
 
 use jit_allocator::{JitAllocator, JitAllocatorOptions};
-use once_cell::sync::OnceCell;
-use parking_lot::Mutex;
+use std::sync::{Mutex, OnceLock, PoisonError};
 
 pub mod fpr_info;
 pub mod gpr_info;
 pub mod helpers;
 
-pub static EXECUTABLE_ALLOCATOR: OnceCell<Mutex<Box<JitAllocator>>> = OnceCell::new();
+pub static EXECUTABLE_ALLOCATOR: OnceLock<Mutex<Box<JitAllocator>>> = OnceLock::new();
 pub fn init_executable_allocator_with(opts: JitAllocatorOptions) {
     EXECUTABLE_ALLOCATOR.get_or_init(|| Mutex::new(JitAllocator::new(opts)));
 }
@@ -29,6 +28,7 @@ pub fn allocate_executable_memory(
     EXECUTABLE_ALLOCATOR
         .get_or_init(|| Mutex::new(JitAllocator::new(JitAllocatorOptions::default())))
         .lock()
+        .unwrap_or_else(PoisonError::into_inner)
         .alloc(size)
 }
 
@@ -45,6 +45,7 @@ pub unsafe fn free_executable_memory(rx: *const u8) -> Result<(), jit_allocator:
             .get()
             .expect("Executable Allocator must be initialized before freeing")
             .lock()
+            .unwrap_or_else(PoisonError::into_inner)
             .release(rx)
     }
 }

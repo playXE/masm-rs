@@ -202,7 +202,7 @@ macro_rules! decl_immediate {
         impl $name {
             pub const IMMEDIATE_SIZE: usize = $immediate_size;
 
-            pub fn immediate_mask<T:  num_traits::WrappingSub + num::PrimInt + num::NumCast>() -> T {
+            pub fn immediate_mask<T: num_traits::WrappingSub + num_traits::PrimInt + num_traits::NumCast>() -> T {
                 if $immediate_size < std::mem::size_of::<u32>() * 8 {
                     T::from(1u64.wrapping_shl($immediate_size as u32)).unwrap().wrapping_sub(&T::one())
                 } else {
@@ -210,14 +210,14 @@ macro_rules! decl_immediate {
                 }
             }
 
-            pub fn is_valid<T: num::PrimInt + num::NumCast>(imm_value: T) -> bool {
+            pub fn is_valid<T: num_traits::PrimInt + num_traits::NumCast>(imm_value: T) -> bool {
                 let shift = std::mem::size_of::<T>() * 8 - $immediate_size;
 
 
                 imm_value == T::from((imm_value.to_i64().unwrap() << shift) >> shift).unwrap()
             }
 
-            pub fn v32<T: num::NumCast>(imm_value: i32) -> T {
+            pub fn v32<T: num_traits::NumCast>(imm_value: i32) -> T {
 
                 assert!(Self::is_valid(imm_value), "Invalid immediate value: {}", imm_value);
                 let imm_value = imm_value as u32;
@@ -225,7 +225,7 @@ macro_rules! decl_immediate {
                 T::from(imm_value & mask).unwrap()
             }
 
-            pub fn v64<T: num::NumCast>(imm_value: i64) -> T {
+            pub fn v64<T: num_traits::NumCast>(imm_value: i64) -> T {
                 assert!(Self::is_valid(imm_value));
                 let imm_value = imm_value as u64;
                 let mask: u64 = Self::immediate_mask::<u64>();
@@ -241,7 +241,7 @@ macro_rules! decl_immediate {
             $ctor
         }
 
-        impl num::ToPrimitive for $name {
+        impl num_traits::ToPrimitive for $name {
             fn to_i64(&self) -> Option<i64> {
                 Some(self.value as i64)
             }
@@ -259,9 +259,9 @@ macro_rules! decl_immediate {
             }
         }
 
-        impl num::NumCast for $name {
+        impl num_traits::NumCast for $name {
             fn from<T>(n: T) -> Option<Self>
-            where T: num::ToPrimitive
+            where T: num_traits::ToPrimitive
             {
                 let n = n.to_u32()?;
                 if Self::is_valid(n) {
