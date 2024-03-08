@@ -141,8 +141,6 @@ dependencies = [
  "iced-x86",
  "jit-allocator",
  "num-traits",
- "once_cell",
- "parking_lot",
  "paste",
  "pico-args",
  "tinyvec",
